@@ -70,7 +70,7 @@ export default function HomeScreen() {
 
             {/* ส่วนปุ่ม Start และ เมนูด้านล่าง */}
             <View style={styles.bottomSection}>
-                <TouchableOpacity onPress={() => router.push('/pain' as any)}>
+                <TouchableOpacity onPress={() => router.push('/pain-questionnaire' as any)}>
                     <LinearGradient
                         colors={['#237FFF', '#A8CCFF']}
                         start={{ x: 0, y: 0 }}

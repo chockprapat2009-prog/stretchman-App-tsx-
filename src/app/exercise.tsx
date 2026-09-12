@@ -1,425 +1,2427 @@
-import React, { useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
+
 import {
+    Alert,
+    ScrollView,
     StyleSheet,
     Text,
-    View,
     TouchableOpacity,
-    ScrollView,
-    Alert,
+    View,
 } from 'react-native';
+
 import { FontAwesome6 } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router, useLocalSearchParams } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+    router,
+    useFocusEffect,
+} from 'expo-router';
+
 import BottomNav from './components/BottomNav';
-import CustomHeader from './components/CustomHeader'; // ดึง CustomHeader มาใช้งาน
+
+
+// =====================================================
+// TYPES
+// =====================================================
+
+interface PainAreaRecord {
+    area: string;
+    painLevel: number;
+    symptom: string;
+}
+
+interface SafetyData {
+    hasRedFlag: boolean;
+    answers: Record<string, boolean>;
+}
+
+interface AssessmentData {
+    painAreas: PainAreaRecord[];
+    activity: string;
+    safety: SafetyData;
+    updatedAt: number;
+}
 
 interface ExerciseItem {
+    id: string;
     name: string;
     description: string;
     time: string;
+    areas: string[];
+    icon: string;
 }
 
-// ฐานข้อมูลท่ายืดตามจุดที่ปวด
-const exercisesDatabase: Record<string, ExerciseItem[]> = {
-    'คอ': [
-        {
-            name: 'ยืดกล้ามเนื้อคอด้านข้าง',
-            description: 'ค่อย ๆ เอียงศีรษะไปด้านข้าง',
-            time: '20 วินาที',
-        },
-        {
-            name: 'ยืดคอด้านหน้า',
-            description: 'ค่อย ๆ เงยหน้าและยืดกล้ามเนื้อ',
-            time: '15 วินาที',
-        },
-        {
-            name: 'หมุนคอเบา ๆ',
-            description: 'หมุนศีรษะช้า ๆ อย่างนุ่มนวล',
-            time: '30 วินาที',
-        },
-    ],
-    'ไหล่ซ้าย': [
-        {
-            name: 'ยืดไหล่แบบพาดแขน',
-            description: 'ใช้แขนอีกข้างช่วยดึงเบา ๆ',
-            time: '20 วินาที',
-        },
-        {
-            name: 'ยืดไหล่ด้านข้าง',
-            description: 'ยกแขนและยืดออกด้านข้าง',
-            time: '20 วินาที',
-        },
-    ],
-    'ไหล่ขวา': [
-        {
-            name: 'ยืดไหล่แบบพาดแขน',
-            description: 'ใช้แขนอีกข้างช่วยดึงเบา ๆ',
-            time: '20 วินาที',
-        },
-        {
-            name: 'ยืดไหล่ด้านข้าง',
-            description: 'ยกแขนและยืดออกด้านข้าง',
-            time: '20 วินาที',
-        },
-    ],
-    'หลังส่วนบน': [
-        {
-            name: 'ยืดหลังส่วนบน',
-            description: 'ประสานมือและดันแขนไปด้านหน้า',
-            time: '20 วินาที',
-        },
-        {
-            name: 'ท่ายืดหลังแบบกอดตัวเอง',
-            description: 'กอดตัวเองและดันหลังออก',
-            time: '20 วินาที',
-        },
-    ],
-    'หลัง': [
-        {
-            name: 'ยืดหลัง',
-            description: 'ยืดกล้ามเนื้อหลังอย่างช้า ๆ',
-            time: '20 วินาที',
-        },
-        {
-            name: 'ท่า Cat-Cow',
-            description: 'ขยับกระดูกสันหลังอย่างนุ่มนวล',
-            time: '30 วินาที',
-        },
-    ],
-    'หลังส่วนล่าง': [
-        {
-            name: 'ยืดหลังส่วนล่าง',
-            description: 'ดึงเข่าเข้าหาลำตัวอย่างเบา ๆ',
-            time: '20 วินาที',
-        },
-        {
-            name: "ท่า Child's Pose",
-            description: 'นั่งพับตัวเพื่อผ่อนคลายหลัง',
-            time: '30 วินาที',
-        },
-    ],
-    'เอว': [
-        {
-            name: 'ยืดเอวด้านข้าง',
-            description: 'เอียงลำตัวไปด้านข้างอย่างช้า ๆ',
-            time: '20 วินาที',
-        },
-    ],
-    'สะโพก': [
-        {
-            name: 'ยืดสะโพก',
-            description: 'ยืดกล้ามเนื้อบริเวณสะโพก',
-            time: '20 วินาที',
-        },
-    ],
-    'หน้าอก': [
-        {
-            name: 'ยืดหน้าอก',
-            description: 'เปิดไหล่และยืดกล้ามเนื้อหน้าอก',
-            time: '20 วินาที',
-        },
-    ],
-    'ท้อง': [
-        {
-            name: 'ยืดลำตัวด้านหน้า',
-            description: 'ยืดกล้ามเนื้อบริเวณด้านหน้าของลำตัว',
-            time: '15 วินาที',
-        },
-    ],
-    'เข่าซ้าย': [
-        {
-            name: 'ยืดต้นขาด้านหน้า',
-            description: 'จับข้อเท้าและดึงเข้าหาตัวเบา ๆ',
-            time: '20 วินาที',
-        },
-    ],
-    'เข่าขวา': [
-        {
-            name: 'ยืดต้นขาด้านหน้า',
-            description: 'จับข้อเท้าและดึงเข้าหาตัวเบา ๆ',
-            time: '20 วินาที',
-        },
-    ],
+interface RecommendedExercise
+    extends ExerciseItem {
+    matchArea: PainAreaRecord;
+}
+
+
+// =====================================================
+// AREA LABEL
+// =====================================================
+
+const AREA_LABELS: Record<string, string> = {
+    neck: 'คอ',
+    shoulder: 'ไหล่',
+    upper_back: 'หลังส่วนบน',
+    lower_back: 'หลังส่วนล่าง',
+    arm: 'แขน',
+    wrist: 'ข้อมือ',
+    hip: 'สะโพก',
+    thigh: 'ต้นขา',
+    calf: 'น่อง',
+    other: 'อื่น ๆ',
 };
 
-const defaultExercises: ExerciseItem[] = [
+
+// =====================================================
+// EXERCISE DATABASE
+// ระบบใหม่จะค้นหาจาก area id ของ Questionnaire
+// =====================================================
+
+const EXERCISE_DATABASE: ExerciseItem[] = [
+
+    // =================================================
+    // NECK
+    // =================================================
+
     {
-        name: 'ยืดกล้ามเนื้อเบื้องต้น',
-        description: 'ยืดกล้ามเนื้ออย่างนุ่มนวล',
+        id: 'neck-side',
+        name: 'ยืดกล้ามเนื้อคอด้านข้าง',
+        description: 'ยืดคออย่างนุ่มนวลโดยไม่ฝืนการเคลื่อนไหว',
         time: '20 วินาที',
+        areas: ['neck'],
+        icon: 'person',
     },
+
     {
-        name: 'ยืดตัวเบา ๆ',
-        description: 'เคลื่อนไหวร่างกายอย่างช้า ๆ',
+        id: 'neck-forward',
+        name: 'ยืดคอด้านหน้า',
+        description: 'เคลื่อนไหวศีรษะอย่างช้า ๆ เพื่อผ่อนคลายบริเวณคอ',
+        time: '15 วินาที',
+        areas: ['neck'],
+        icon: 'person',
+    },
+
+    {
+        id: 'neck-rotation',
+        name: 'หมุนคอเบา ๆ',
+        description: 'หมุนศีรษะอย่างช้า ๆ ในช่วงการเคลื่อนไหวที่สบาย',
         time: '30 วินาที',
+        areas: ['neck'],
+        icon: 'arrows-rotate',
+    },
+
+
+    // =================================================
+    // SHOULDER
+    // =================================================
+
+    {
+        id: 'shoulder-cross',
+        name: 'ยืดไหล่แบบพาดแขน',
+        description: 'พาดแขนข้ามลำตัวและยืดอย่างนุ่มนวล',
+        time: '20 วินาที',
+        areas: ['shoulder'],
+        icon: 'child-reaching',
+    },
+
+    {
+        id: 'shoulder-side',
+        name: 'ยืดไหล่ด้านข้าง',
+        description: 'ยกแขนและยืดอย่างช้า ๆ ในระดับที่สบาย',
+        time: '20 วินาที',
+        areas: ['shoulder'],
+        icon: 'child-reaching',
+    },
+
+    {
+        id: 'shoulder-roll',
+        name: 'หมุนไหล่เบา ๆ',
+        description: 'หมุนหัวไหล่อย่างช้า ๆ เพื่อผ่อนคลายกล้ามเนื้อ',
+        time: '30 วินาที',
+        areas: ['shoulder'],
+        icon: 'arrows-rotate',
+    },
+
+
+    // =================================================
+    // UPPER BACK
+    // =================================================
+
+    {
+        id: 'upper-back-reach',
+        name: 'ยืดหลังส่วนบน',
+        description: 'ประสานมือและยืดแขนไปด้านหน้าอย่างนุ่มนวล',
+        time: '20 วินาที',
+        areas: ['upper_back'],
+        icon: 'person',
+    },
+
+    {
+        id: 'upper-back-hug',
+        name: 'ท่ายืดหลังแบบกอดตัวเอง',
+        description: 'กอดตัวเองและผ่อนคลายช่วงหลังส่วนบน',
+        time: '20 วินาที',
+        areas: ['upper_back'],
+        icon: 'people-arrows',
+    },
+
+
+    // =================================================
+    // LOWER BACK
+    // =================================================
+
+    {
+        id: 'lower-back-knee',
+        name: 'ยืดหลังส่วนล่าง',
+        description: 'ดึงเข่าเข้าหาลำตัวอย่างเบา ๆ ในช่วงที่สบาย',
+        time: '20 วินาที',
+        areas: ['lower_back'],
+        icon: 'person',
+    },
+
+    {
+        id: 'child-pose',
+        name: "ท่า Child's Pose",
+        description: 'ผ่อนคลายลำตัวและหลังอย่างนุ่มนวล',
+        time: '30 วินาที',
+        areas: ['lower_back'],
+        icon: 'person',
+    },
+
+
+    // =================================================
+    // ARM
+    // =================================================
+
+    {
+        id: 'arm-cross',
+        name: 'ยืดแขนพาดลำตัว',
+        description: 'พาดแขนข้ามลำตัวและยืดอย่างนุ่มนวล',
+        time: '20 วินาที',
+        areas: ['arm'],
+        icon: 'hand',
+    },
+
+    {
+        id: 'arm-reach',
+        name: 'ยืดแขนเหนือศีรษะ',
+        description: 'ยกแขนขึ้นและยืดตัวอย่างสบาย',
+        time: '20 วินาที',
+        areas: ['arm'],
+        icon: 'hand',
+    },
+
+
+    // =================================================
+    // WRIST
+    // =================================================
+
+    {
+        id: 'wrist-flex',
+        name: 'ยืดข้อมือ',
+        description: 'ยืดข้อมืออย่างช้า ๆ โดยไม่ฝืน',
+        time: '15 วินาที',
+        areas: ['wrist'],
+        icon: 'hand',
+    },
+
+    {
+        id: 'wrist-rotate',
+        name: 'หมุนข้อมือเบา ๆ',
+        description: 'หมุนข้อมือในช่วงการเคลื่อนไหวที่สบาย',
+        time: '20 วินาที',
+        areas: ['wrist'],
+        icon: 'arrows-rotate',
+    },
+
+
+    // =================================================
+    // HIP
+    // =================================================
+
+    {
+        id: 'hip-stretch',
+        name: 'ยืดสะโพก',
+        description: 'ยืดกล้ามเนื้อบริเวณสะโพกอย่างช้า ๆ',
+        time: '20 วินาที',
+        areas: ['hip'],
+        icon: 'person',
+    },
+
+
+    // =================================================
+    // THIGH
+    // =================================================
+
+    {
+        id: 'thigh-front',
+        name: 'ยืดต้นขาด้านหน้า',
+        description: 'ยืดกล้ามเนื้อต้นขาด้านหน้าอย่างนุ่มนวล',
+        time: '20 วินาที',
+        areas: ['thigh'],
+        icon: 'person-running',
+    },
+
+    {
+        id: 'thigh-back',
+        name: 'ยืดต้นขาด้านหลัง',
+        description: 'ยืดกล้ามเนื้อต้นขาด้านหลังในช่วงที่สบาย',
+        time: '20 วินาที',
+        areas: ['thigh'],
+        icon: 'person-running',
+    },
+
+
+    // =================================================
+    // CALF
+    // =================================================
+
+    {
+        id: 'calf-wall',
+        name: 'ยืดน่องกับกำแพง',
+        description: 'ใช้กำแพงช่วยพยุงตัวและยืดน่องอย่างช้า ๆ',
+        time: '20 วินาที',
+        areas: ['calf'],
+        icon: 'person-running',
+    },
+
+    {
+        id: 'calf-stand',
+        name: 'ยืดน่องในท่ายืน',
+        description: 'ยืดน่องอย่างนุ่มนวลโดยควบคุมการเคลื่อนไหว',
+        time: '20 วินาที',
+        areas: ['calf'],
+        icon: 'person-running',
+    },
+
+
+    // =================================================
+    // OTHER
+    // =================================================
+
+    {
+        id: 'full-body',
+        name: 'ยืดร่างกายเบื้องต้น',
+        description: 'ยืดร่างกายอย่างนุ่มนวล เหมาะสำหรับการเริ่มต้น',
+        time: '20 วินาที',
+        areas: ['other'],
+        icon: 'person',
     },
 ];
 
+
+// =====================================================
+// MAIN SCREEN
+// =====================================================
+
 export default function ExerciseScreen() {
-    const params = useLocalSearchParams();
-    const painArea = typeof params.area === 'string' ? params.area : 'คอ';
-    const painLevel = typeof params.level === 'string' ? params.level : '-';
-    const painType = typeof params.type === 'string' ? params.type : '-';
 
-    const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+    const [
+        assessment,
+        setAssessment,
+    ] = useState<AssessmentData | null>(
+        null
+    );
 
-    const recommendedExercises = exercisesDatabase[painArea] || defaultExercises;
+    const [
+        loading,
+        setLoading,
+    ] = useState(true);
 
-    const handleBack = () => {
-        if (router.canGoBack()) {
-            router.back();
-        } else {
-            router.push('/record' as any);
+
+    const [
+        selectedExercise,
+        setSelectedExercise,
+    ] = useState<RecommendedExercise | null>(
+        null
+    );
+
+
+    // =================================================
+    // LOAD DATA
+    // =================================================
+
+    const loadAssessment = async () => {
+
+        try {
+
+            setLoading(true);
+
+            const stored =
+                await AsyncStorage.getItem(
+                    'stretchmanPainAssessment'
+                );
+
+
+            if (!stored) {
+
+                setAssessment(null);
+
+                return;
+            }
+
+
+            const parsed =
+                JSON.parse(stored);
+
+
+            if (
+                parsed &&
+                Array.isArray(
+                    parsed.painAreas
+                )
+            ) {
+
+                setAssessment(parsed);
+
+            } else {
+
+                setAssessment(null);
+
+            }
+
+        } catch (error) {
+
+            console.log(
+                'Failed to load assessment:',
+                error
+            );
+
+            setAssessment(null);
+
+        } finally {
+
+            setLoading(false);
+
         }
+
     };
 
-    const handleStart = () => {
-        if (selectedIndex === null) {
-            Alert.alert('ยังไม่ได้เลือกท่ายืด', 'กรุณาเลือกท่ายืดก่อนครับ');
+
+    // =================================================
+    // REFRESH SCREEN
+    // =================================================
+
+    useFocusEffect(
+        useCallback(() => {
+
+            loadAssessment();
+
+        }, [])
+    );
+
+
+    // =================================================
+    // RECOMMENDATION ENGINE
+    // =================================================
+
+    const recommendedExercises =
+        useMemo<RecommendedExercise[]>(() => {
+
+            if (
+                !assessment ||
+                !assessment.painAreas ||
+                assessment.painAreas.length === 0
+            ) {
+
+                return [];
+
+            }
+
+
+            const results:
+                RecommendedExercise[] = [];
+
+
+            /*
+             * เรียงพื้นที่จากระดับปวดมาก → น้อย
+             */
+
+            const sortedPainAreas =
+                [...assessment.painAreas].sort(
+                    (a, b) =>
+                        b.painLevel -
+                        a.painLevel
+                );
+
+
+            sortedPainAreas.forEach(
+                painArea => {
+
+                    const matchingExercises =
+                        EXERCISE_DATABASE.filter(
+                            exercise =>
+                                exercise.areas.includes(
+                                    painArea.area
+                                )
+                        );
+
+
+                    matchingExercises.forEach(
+                        exercise => {
+
+                            /*
+                             * ไม่ให้ท่าซ้ำ
+                             */
+                            const alreadyAdded =
+                                results.some(
+                                    item =>
+                                        item.id ===
+                                        exercise.id
+                                );
+
+
+                            if (
+                                !alreadyAdded
+                            ) {
+
+                                results.push({
+                                    ...exercise,
+                                    matchArea:
+                                        painArea,
+                                });
+
+                            }
+
+                        }
+                    );
+
+                }
+            );
+
+
+            /*
+             * ถ้าไม่มีท่าที่ตรงกับบริเวณ
+             * ให้ใช้ full-body เป็น fallback
+             */
+
+            if (
+                results.length === 0
+            ) {
+
+                const fallback =
+                    EXERCISE_DATABASE.find(
+                        exercise =>
+                            exercise.id ===
+                            'full-body'
+                    );
+
+
+                if (fallback) {
+
+                    results.push({
+
+                        ...fallback,
+
+                        matchArea: {
+                            area: 'other',
+                            painLevel: 0,
+                            symptom: '',
+                        },
+
+                    });
+
+                }
+
+            }
+
+
+            /*
+             * จำกัดจำนวนที่แสดง
+             */
+
+            return results.slice(
+                0,
+                8
+            );
+
+        }, [assessment]);
+
+
+    // =================================================
+    // AUTO SELECT TOP RECOMMENDATION
+    // =================================================
+
+    React.useEffect(() => {
+
+        if (
+            recommendedExercises.length > 0 &&
+            !selectedExercise
+        ) {
+
+            setSelectedExercise(
+                recommendedExercises[0]
+            );
+
+        }
+
+    }, [
+        recommendedExercises,
+        selectedExercise,
+    ]);
+
+
+    // =================================================
+    // HIGHEST PAIN
+    // =================================================
+
+    const highestPain =
+        assessment?.painAreas?.length
+            ? [...assessment.painAreas].sort(
+                (a, b) =>
+                    b.painLevel -
+                    a.painLevel
+            )[0]
+            : null;
+
+
+    // =================================================
+    // START STRETCH
+    // =================================================
+
+    const handleStart = async () => {
+
+        if (!selectedExercise) {
+
+            Alert.alert(
+                'ยังไม่มีท่าที่แนะนำ',
+                'ระบบยังไม่สามารถเลือกท่าให้คุณได้'
+            );
+
             return;
         }
 
-        router.push('/stretch' as any);
+
+        try {
+
+            /*
+             * เก็บข้อมูลไว้ให้ stretch.tsx
+             * ใช้ต่อได้เหมือน flow เดิม
+             */
+
+            await AsyncStorage.setItem(
+                'exerciseName',
+                selectedExercise.name
+            );
+
+
+            await AsyncStorage.setItem(
+                'exerciseTime',
+                selectedExercise.time
+            );
+
+
+            await AsyncStorage.setItem(
+                'exerciseImage',
+                ''
+            );
+
+
+            await AsyncStorage.setItem(
+
+                'stretchmanSelectedExercise',
+
+                JSON.stringify({
+
+                    id:
+                        selectedExercise.id,
+
+                    name:
+                        selectedExercise.name,
+
+                    description:
+                        selectedExercise.description,
+
+                    time:
+                        selectedExercise.time,
+
+                    area:
+                        selectedExercise.matchArea.area,
+
+                    painLevel:
+                        selectedExercise.matchArea
+                            .painLevel,
+
+                    symptom:
+                        selectedExercise.matchArea
+                            .symptom,
+
+                })
+
+            );
+
+
+            router.push(
+                '/stretch' as any
+            );
+
+        } catch (error) {
+
+            console.log(
+                'Failed to prepare exercise:',
+                error
+            );
+
+
+            Alert.alert(
+                'เกิดข้อผิดพลาด',
+                'ไม่สามารถเตรียมข้อมูลท่ายืดได้'
+            );
+
+        }
+
     };
 
-    return (
-        <View style={styles.container}>
-            {/* ใช้ CustomHeader ควบคุมส่วนหัว */}
-            <CustomHeader
-                title="ท่ายืดที่แนะนำ"
-                subtitle="Stretchman แนะนำให้คุณ"
-                onBack={handleBack}
-                rightComponent={
-                    <View style={styles.headerIcon}>
-                        <FontAwesome6 name="person-running" size={18} color="white" />
-                    </View>
+
+    // =================================================
+    // BACK
+    // =================================================
+
+    const handleBack = () => {
+
+        if (router.canGoBack()) {
+
+            router.back();
+
+        } else {
+
+            router.push(
+                '/record' as any
+            );
+
+        }
+
+    };
+
+
+    // =================================================
+    // NO ASSESSMENT
+    // =================================================
+
+    if (
+        !loading &&
+        !assessment
+    ) {
+
+        return (
+
+            <View
+                style={
+                    styles.container
                 }
-            />
-
-            {/* Selected Info */}
-            <View style={styles.selectedInfo}>
-                <View style={styles.infoItem}>
-                    <Text style={styles.infoLabel}>จุดที่ปวด</Text>
-                    <Text style={styles.infoValue}>{painArea}</Text>
-                </View>
-
-                <View style={styles.infoItem}>
-                    <Text style={styles.infoLabel}>ระดับความปวด</Text>
-                    <Text style={styles.infoValue}>{painLevel !== '-' ? `${painLevel}/5` : '-'}</Text>
-                </View>
-
-                <View style={styles.infoItem}>
-                    <Text style={styles.infoLabel}>อาการ</Text>
-                    <Text style={styles.infoValue}>{painType}</Text>
-                </View>
-            </View>
-
-            {/* Recommend Title */}
-            <View style={styles.recommendTitle}>
-                <Text style={styles.recommendTitleText}>ท่าที่เหมาะกับคุณ</Text>
-                <Text style={styles.recommendSubtitleText}>ลองเลือกท่าที่คุณต้องการทำ</Text>
-            </View>
-
-            {/* Exercise List */}
-            <ScrollView
-                style={styles.exerciseList}
-                contentContainerStyle={styles.exerciseListContent}
-                showsVerticalScrollIndicator={false}
             >
-                {recommendedExercises.map((exercise, index) => {
-                    const isSelected = selectedIndex === index;
-                    return (
-                        <TouchableOpacity
-                            key={index}
-                            style={[
-                                styles.exerciseCard,
-                                isSelected && styles.exerciseCardSelected,
-                            ]}
-                            onPress={() => setSelectedIndex(index)}
-                        >
-                            <View style={styles.exerciseImage}>
-                                <FontAwesome6 name="person-running" size={28} color="#6d99ed" />
-                            </View>
 
-                            <View style={styles.exerciseContent}>
-                                <Text style={styles.exerciseName}>{exercise.name}</Text>
-                                <Text style={styles.exerciseDescription}>{exercise.description}</Text>
-                                <View style={styles.exerciseTime}>
-                                    <FontAwesome6 name="clock" size={12} color="#5d86dd" />
-                                    <Text style={styles.exerciseTimeText}>{exercise.time}</Text>
-                                </View>
-                            </View>
+                <View
+                    style={
+                        styles.emptyContainer
+                    }
+                >
+
+                    <View
+                        style={
+                            styles.emptyIcon
+                        }
+                    >
+
+                        <FontAwesome6
+                            name="clipboard-question"
+                            size={32}
+                            color="#237FFF"
+                        />
+
+                    </View>
+
+
+                    <Text
+                        style={
+                            styles.emptyTitle
+                        }
+                    >
+                        ยังไม่มีข้อมูลอาการ
+                    </Text>
+
+
+                    <Text
+                        style={
+                            styles.emptyText
+                        }
+                    >
+                        กรุณาทำแบบสอบถามก่อน
+                        เพื่อให้ Stretchman
+                        แนะนำท่ายืดที่เหมาะสม
+                    </Text>
+
+
+                    <TouchableOpacity
+                        activeOpacity={0.85}
+                        onPress={() =>
+                            router.push(
+                                '/pain-questionnaire'as any
+                            )
+                        }
+                    >
+
+                        <LinearGradient
+
+                            colors={[
+                                '#237FFF',
+                                '#A8CCFF',
+                            ]}
+
+                            start={{
+                                x: 0,
+                                y: 0,
+                            }}
+
+                            end={{
+                                x: 1,
+                                y: 0,
+                            }}
+
+                            style={
+                                styles.emptyButton
+                            }
+                        >
+
+                            <Text
+                                style={
+                                    styles.emptyButtonText
+                                }
+                            >
+                                เริ่มแบบสอบถาม
+                            </Text>
+
+
+                            <FontAwesome6
+                                name="arrow-right"
+                                size={15}
+                                color="#ffffff"
+                            />
+
+                        </LinearGradient>
+
+                    </TouchableOpacity>
+
+                </View>
+
+            </View>
+
+        );
+
+    }
+
+
+    // =================================================
+    // MAIN
+    // =================================================
+
+    return (
+
+        <View
+            style={
+                styles.container
+            }
+        >
+
+
+            {/* =================================================
+                HEADER
+            ================================================= */}
+
+            <View
+                style={
+                    styles.header
+                }
+            >
+
+                <TouchableOpacity
+
+                    style={
+                        styles.backButton
+                    }
+
+                    onPress={
+                        handleBack
+                    }
+
+                    activeOpacity={
+                        0.8
+                    }
+                >
+
+                    <FontAwesome6
+                        name="arrow-left"
+                        size={18}
+                        color="#237FFF"
+                    />
+
+                </TouchableOpacity>
+
+
+                <View
+                    style={
+                        styles.headerText
+                    }
+                >
+
+                    <Text
+                        style={
+                            styles.headerTitle
+                        }
+                    >
+                        ท่ายืดที่แนะนำ
+                    </Text>
+
+
+                    <Text
+                        style={
+                            styles.headerSubtitle
+                        }
+                    >
+                        Stretchman แนะนำให้คุณ
+                    </Text>
+
+                </View>
+
+
+                <View
+                    style={
+                        styles.headerIcon
+                    }
+                >
+
+                    <FontAwesome6
+                        name="person-running"
+                        size={18}
+                        color="#ffffff"
+                    />
+
+                </View>
+
+            </View>
+
+
+            <ScrollView
+
+                showsVerticalScrollIndicator={
+                    false
+                }
+
+                contentContainerStyle={
+                    styles.scrollContent
+                }
+            >
+
+
+                {/* =================================================
+                    MAIN RECOMMENDATION
+                ================================================= */}
+
+                {highestPain && (
+
+                    <View
+                        style={
+                            styles.analysisCard
+                        }
+                    >
+
+                        <View
+                            style={
+                                styles.analysisIcon
+                            }
+                        >
+
+                            <FontAwesome6
+                                name="wand-magic-sparkles"
+                                size={18}
+                                color="#ffffff"
+                            />
+
+                        </View>
+
+
+                        <View
+                            style={
+                                styles.analysisContent
+                            }
+                        >
+
+                            <Text
+                                style={
+                                    styles.analysisTitle
+                                }
+                            >
+                                วิเคราะห์จากอาการของคุณ
+                            </Text>
+
+
+                            <Text
+                                style={
+                                    styles.analysisText
+                                }
+                            >
+                                บริเวณที่มีระดับความปวดสูงสุดคือ
+                                {' '}
+                                <Text
+                                    style={
+                                        styles.analysisStrong
+                                    }
+                                >
+                                    {
+                                        AREA_LABELS[
+                                        highestPain.area
+                                        ] ||
+                                        highestPain.area
+                                    }
+                                </Text>
+                                {' '}
+                                ระดับ
+                                {' '}
+                                <Text
+                                    style={
+                                        styles.analysisStrong
+                                    }
+                                >
+                                    {highestPain.painLevel}/10
+                                </Text>
+                            </Text>
+
+                        </View>
+
+                    </View>
+
+                )}
+
+
+                {/* =================================================
+                    SECTION TITLE
+                ================================================= */}
+
+                <View
+                    style={
+                        styles.sectionHeader
+                    }
+                >
+
+                    <View>
+
+                        <Text
+                            style={
+                                styles.sectionTitle
+                            }
+                        >
+                            ท่าที่เหมาะกับคุณ
+                        </Text>
+
+
+                        <Text
+                            style={
+                                styles.sectionSubtitle
+                            }
+                        >
+                            ระบบจัดลำดับจากข้อมูลอาการของคุณ
+                        </Text>
+
+                    </View>
+
+
+                    <View
+                        style={
+                            styles.recommendBadge
+                        }
+                    >
+
+                        <FontAwesome6
+                            name="sparkles"
+                            size={11}
+                            color="#237FFF"
+                        />
+
+
+                        <Text
+                            style={
+                                styles.recommendBadgeText
+                            }
+                        >
+                            Recommended
+                        </Text>
+
+                    </View>
+
+                </View>
+
+
+                {/* =================================================
+                    TOP RECOMMENDED
+                ================================================= */}
+
+                {selectedExercise && (
+
+                    <LinearGradient
+
+                        colors={[
+                            '#237FFF',
+                            '#A8CCFF',
+                        ]}
+
+                        start={{
+                            x: 0,
+                            y: 0,
+                        }}
+
+                        end={{
+                            x: 1,
+                            y: 1,
+                        }}
+
+                        style={
+                            styles.heroCard
+                        }
+                    >
+
+                        <View
+                            style={
+                                styles.heroTopRow
+                            }
+                        >
 
                             <View
-                                style={[
-                                    styles.exerciseCheck,
-                                    isSelected && styles.exerciseCheckSelected,
-                                ]}
+                                style={
+                                    styles.heroIcon
+                                }
                             >
-                                {isSelected && <FontAwesome6 name="check" size={12} color="white" />}
+
+                                <FontAwesome6
+                                    name={
+                                        selectedExercise.icon as any
+                                    }
+                                    size={28}
+                                    color="#237FFF"
+                                />
+
                             </View>
-                        </TouchableOpacity>
-                    );
-                })}
+
+
+                            <View
+                                style={
+                                    styles.heroRecommended
+                                }
+                            >
+
+                                <FontAwesome6
+                                    name="star"
+                                    size={11}
+                                    color="#ffffff"
+                                />
+
+
+                                <Text
+                                    style={
+                                        styles.heroRecommendedText
+                                    }
+                                >
+                                    เหมาะที่สุดสำหรับคุณ
+                                </Text>
+
+                            </View>
+
+                        </View>
+
+
+                        <Text
+                            style={
+                                styles.heroTitle
+                            }
+                        >
+                            {
+                                selectedExercise.name
+                            }
+                        </Text>
+
+
+                        <Text
+                            style={
+                                styles.heroDescription
+                            }
+                        >
+                            {
+                                selectedExercise.description
+                            }
+                        </Text>
+
+
+                        <View
+                            style={
+                                styles.heroInfoRow
+                            }
+                        >
+
+                            <View
+                                style={
+                                    styles.heroInfo
+                                }
+                            >
+
+                                <FontAwesome6
+                                    name="clock"
+                                    size={13}
+                                    color="#ffffff"
+                                />
+
+                                <Text
+                                    style={
+                                        styles.heroInfoText
+                                    }
+                                >
+                                    {
+                                        selectedExercise.time
+                                    }
+                                </Text>
+
+                            </View>
+
+
+                            <View
+                                style={
+                                    styles.heroInfo
+                                }
+                            >
+
+                                <FontAwesome6
+                                    name="location-dot"
+                                    size={13}
+                                    color="#ffffff"
+                                />
+
+                                <Text
+                                    style={
+                                        styles.heroInfoText
+                                    }
+                                >
+                                    {
+                                        AREA_LABELS[
+                                        selectedExercise
+                                            .matchArea
+                                            .area
+                                        ] ||
+                                        selectedExercise
+                                            .matchArea
+                                            .area
+                                    }
+                                </Text>
+
+                            </View>
+
+                        </View>
+
+                    </LinearGradient>
+
+                )}
+
+
+                {/* =================================================
+                    OTHER RECOMMENDATIONS
+                ================================================= */}
+
+                <Text
+                    style={
+                        styles.otherTitle
+                    }
+                >
+                    ท่าที่แนะนำเพิ่มเติม
+                </Text>
+
+
+                {recommendedExercises
+                    .map(
+                        (
+                            exercise,
+                            index
+                        ) => {
+
+                            const isActive =
+                                selectedExercise?.id ===
+                                exercise.id;
+
+
+                            return (
+
+                                <TouchableOpacity
+
+                                    key={
+                                        exercise.id
+                                    }
+
+                                    activeOpacity={
+                                        0.85
+                                    }
+
+                                    onPress={() =>
+                                        setSelectedExercise(
+                                            exercise
+                                        )
+                                    }
+
+                                    style={[
+                                        styles.exerciseCard,
+
+                                        isActive &&
+                                        styles.exerciseCardActive,
+                                    ]}
+                                >
+
+                                    {/* NUMBER */}
+
+                                    <View
+                                        style={[
+                                            styles.rankCircle,
+
+                                            isActive &&
+                                            styles.rankCircleActive,
+                                        ]}
+                                    >
+
+                                        <Text
+                                            style={[
+                                                styles.rankText,
+
+                                                isActive &&
+                                                styles.rankTextActive,
+                                            ]}
+                                        >
+                                            {index + 1}
+                                        </Text>
+
+                                    </View>
+
+
+                                    {/* ICON */}
+
+                                    <View
+                                        style={[
+                                            styles.exerciseIcon,
+
+                                            isActive &&
+                                            styles.exerciseIconActive,
+                                        ]}
+                                    >
+
+                                        <FontAwesome6
+                                            name={
+                                                exercise.icon as any
+                                            }
+                                            size={20}
+                                            color={
+                                                isActive
+                                                    ? '#ffffff'
+                                                    : '#237FFF'
+                                            }
+                                        />
+
+                                    </View>
+
+
+                                    {/* CONTENT */}
+
+                                    <View
+                                        style={
+                                            styles.exerciseContent
+                                        }
+                                    >
+
+                                        <Text
+                                            style={
+                                                styles.exerciseName
+                                            }
+                                        >
+                                            {
+                                                exercise.name
+                                            }
+                                        </Text>
+
+
+                                        <Text
+                                            style={
+                                                styles.exerciseDescription
+                                            }
+                                            numberOfLines={
+                                                2
+                                            }
+                                        >
+                                            {
+                                                exercise.description
+                                            }
+                                        
+
+
+                                        </Text>
+
+
+                                        <View
+                                            style={
+                                                styles.exerciseMeta
+                                            }
+                                        >
+
+                                            <View
+                                                style={
+                                                    styles.metaItem
+                                                }
+                                            >
+
+                                                <FontAwesome6
+                                                    name="clock"
+                                                    size={10}
+                                                    color="#64748b"
+                                                />
+
+                                                <Text
+                                                    style={
+                                                        styles.metaText
+                                                    }
+                                                >
+                                                    {
+                                                        exercise.time
+                                                    }
+                                                </Text>
+
+                                            </View>
+
+
+                                            <View
+                                                style={
+                                                    styles.metaItem
+                                                }
+                                            >
+
+                                                <FontAwesome6
+                                                    name="location-dot"
+                                                    size={10}
+                                                    color="#64748b"
+                                                />
+
+                                                <Text
+                                                    style={
+                                                        styles.metaText
+                                                    }
+                                                >
+                                                    {
+                                                        AREA_LABELS[
+                                                        exercise
+                                                            .matchArea
+                                                            .area
+                                                        ] ||
+                                                        exercise
+                                                            .matchArea
+                                                            .area
+                                                    }
+                                                </Text>
+
+                                            </View>
+
+                                        </View>
+
+                                    </View>
+
+
+                                    {/* ARROW */}
+
+                                    <View
+                                        style={[
+                                            styles.arrowCircle,
+
+                                            isActive &&
+                                            styles.arrowCircleActive,
+                                        ]}
+                                    >
+
+                                        <FontAwesome6
+                                            name={
+                                                isActive
+                                                    ? 'check'
+                                                    : 'arrow-right'
+                                            }
+                                            size={12}
+                                            color={
+                                                isActive
+                                                    ? '#ffffff'
+                                                    : '#237FFF'
+                                            }
+                                        />
+
+                                    </View>
+
+                                </TouchableOpacity>
+
+                            );
+
+                        }
+                    )}
+
+
+                {/* =================================================
+                    SAFETY
+                ================================================= */}
+
+                <View
+                    style={
+                        styles.safetyCard
+                    }
+                >
+
+                    <View
+                        style={
+                            styles.safetyIcon
+                        }
+                    >
+
+                        <FontAwesome6
+                            name="circle-info"
+                            size={16}
+                            color="#237FFF"
+                        />
+
+                    </View>
+
+
+                    <View
+                        style={
+                            styles.safetyContent
+                        }
+                    >
+
+                        <Text
+                            style={
+                                styles.safetyTitle
+                            }
+                        >
+                            ก่อนเริ่มยืด
+                        </Text>
+
+
+                        <Text
+                            style={
+                                styles.safetyText
+                            }
+                        >
+                            เคลื่อนไหวอย่างนุ่มนวล
+                            และไม่ฝืน หากรู้สึกเจ็บมากขึ้น
+                            หรือมีอาการผิดปกติ ให้หยุดทันที
+                        </Text>
+
+                    </View>
+
+                </View>
+
+
+                {/* =================================================
+                    START
+                ================================================= */}
+
+                <TouchableOpacity
+
+                    activeOpacity={
+                        0.85
+                    }
+
+                    onPress={
+                        handleStart
+                    }
+                >
+
+                    <LinearGradient
+
+                        colors={[
+                            '#237FFF',
+                            '#A8CCFF',
+                        ]}
+
+                        start={{
+                            x: 0,
+                            y: 0,
+                        }}
+
+                        end={{
+                            x: 1,
+                            y: 0,
+                        }}
+
+                        style={
+                            styles.startButton
+                        }
+                    >
+
+                        <View>
+
+                            <Text
+                                style={
+                                    styles.startSmall
+                                }
+                            >
+                                พร้อมแล้วใช่ไหม?
+                            </Text>
+
+
+                            <Text
+                                style={
+                                    styles.startText
+                                }
+                            >
+                                เตรียมยืด
+                            </Text>
+
+                        </View>
+
+
+                        <View
+                            style={
+                                styles.startArrow
+                            }
+                        >
+
+                            <FontAwesome6
+                                name="arrow-right"
+                                size={18}
+                                color="#237FFF"
+                            />
+
+                        </View>
+
+                    </LinearGradient>
+
+                </TouchableOpacity>
+
+
+                {/* =================================================
+                    CHANGE ASSESSMENT
+                ================================================= */}
+
+                <TouchableOpacity
+
+                    style={
+                        styles.retakeButton
+                    }
+
+                    activeOpacity={
+                        0.8
+                    }
+
+                    onPress={() =>
+                        router.push(
+                            '/pain-questionnaire'as any
+                        )
+                    }
+                >
+
+                    <FontAwesome6
+                        name="clipboard-question"
+                        size={14}
+                        color="#237FFF"
+                    />
+
+
+                    <Text
+                        style={
+                            styles.retakeText
+                        }
+                    >
+                        ทำแบบสอบถามใหม่
+                    </Text>
+
+                </TouchableOpacity>
+
+
+                {/* =================================================
+                    DISCLAIMER
+                ================================================= */}
+
+                <Text
+                    style={
+                        styles.disclaimer
+                    }
+                >
+                    Stretchman ใช้ข้อมูลที่ผู้ใช้รายงาน
+                    เพื่อให้คำแนะนำเบื้องต้น
+                    ไม่ใช่การวินิจฉัยหรือการรักษา
+                </Text>
+
+
+                {/* =================================================
+                    BOTTOM NAV
+                ================================================= */}
+
+                <View
+                    style={
+                        styles.bottomNav
+                    }
+                >
+
+                    <BottomNav
+                        activeTab="home"
+                    />
+
+                </View>
+
+
             </ScrollView>
 
-            {/* Start Button */}
-            <TouchableOpacity style={styles.saveButtonWrap} onPress={handleStart}>
-                <LinearGradient
-                    colors={['#237FFF', '#A8CCFF']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={styles.saveButton}
-                >
-                    <Text style={styles.saveText}>เริ่มยืดกล้ามเนื้อ</Text>
-                    <FontAwesome6 name="arrow-right" size={16} color="white" style={{ marginLeft: 8 }} />
-                </LinearGradient>
-            </TouchableOpacity>
-
-            <BottomNav activeTab="home" />
         </View>
+
     );
+
 }
 
+
+// =====================================================
+// STYLES
+// =====================================================
+
 const styles = StyleSheet.create({
+
+    // =================================================
+    // CONTAINER
+    // =================================================
+
     container: {
         flex: 1,
+
         backgroundColor: '#1638AE',
+
         paddingHorizontal: 20,
-        paddingTop: 10,
-        justifyContent: 'space-between',
-        paddingBottom: 15,
     },
-    headerIcon: {
-        width: 42,
-        height: 42,
-        borderRadius: 21,
-        backgroundColor: 'rgba(255,255,255,0.15)',
-        justifyContent: 'center',
-        alignItems: 'center',
+
+
+    scrollContent: {
+        paddingTop: 12,
+
+        paddingBottom: 30,
     },
-    selectedInfo: {
+
+
+    // =================================================
+    // HEADER
+    // =================================================
+
+    header: {
+        height: 64,
+
         flexDirection: 'row',
-        gap: 7,
-        marginTop: 10,
-        marginBottom: 10,
-    },
-    infoItem: {
-        flex: 1,
-        minHeight: 65,
-        padding: 8,
-        borderRadius: 15,
-        backgroundColor: 'rgba(255,255,255,0.10)',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.12)',
+
         alignItems: 'center',
+
+        marginTop: 5,
+
+        marginBottom: 5,
+    },
+
+    backButton: {
+        width: 40,
+        height: 40,
+
+        borderRadius: 20,
+
+        backgroundColor: '#ffffff',
+
+        alignItems: 'center',
+
         justifyContent: 'center',
+
+        marginRight: 11,
     },
-    infoLabel: {
-        fontSize: 9,
-        color: 'rgba(255,255,255,0.7)',
+
+    headerText: {
+        flex: 1,
     },
-    infoValue: {
-        marginTop: 3,
-        fontSize: 13,
-        fontWeight: 'bold',
-        color: 'white',
-        textAlign: 'center',
+
+    headerTitle: {
+        color: '#ffffff',
+
+        fontSize: 21,
+
+        fontWeight: '800',
     },
-    recommendTitle: {
-        marginBottom: 8,
-    },
-    recommendTitleText: {
-        color: 'white',
-        fontSize: 16,
-        fontWeight: 'bold',
-    },
-    recommendSubtitleText: {
-        color: 'rgba(255,255,255,0.7)',
+
+    headerSubtitle: {
+        color:
+            'rgba(255,255,255,0.75)',
+
         fontSize: 11,
+
         marginTop: 2,
     },
-    exerciseList: {
-        flex: 1,
-        marginBottom: 8,
-    },
-    exerciseListContent: {
-        gap: 10,
-        paddingBottom: 5,
-    },
-    exerciseCard: {
-        minHeight: 90,
-        backgroundColor: 'white',
+
+    headerIcon: {
+        width: 40,
+        height: 40,
+
         borderRadius: 20,
-        padding: 10,
-        flexDirection: 'row',
+
+        backgroundColor:
+            'rgba(255,255,255,0.18)',
+
         alignItems: 'center',
-        gap: 12,
-        borderWidth: 3,
-        borderColor: 'transparent',
-    },
-    exerciseCardSelected: {
-        borderColor: '#66a0ff',
-        backgroundColor: '#eef4ff',
-    },
-    exerciseImage: {
-        width: 72,
-        height: 72,
-        borderRadius: 15,
-        backgroundColor: '#dce9ff',
+
         justifyContent: 'center',
-        alignItems: 'center',
     },
+
+
+    // =================================================
+    // ANALYSIS
+    // =================================================
+
+    analysisCard: {
+        backgroundColor:
+            'rgba(255,255,255,0.14)',
+
+        borderWidth: 1,
+
+        borderColor:
+            'rgba(255,255,255,0.15)',
+
+        borderRadius: 19,
+
+        padding: 13,
+
+        flexDirection: 'row',
+
+        alignItems: 'center',
+
+        marginBottom: 18,
+    },
+
+    analysisIcon: {
+        width: 39,
+        height: 39,
+
+        borderRadius: 13,
+
+        backgroundColor: '#237FFF',
+
+        alignItems: 'center',
+
+        justifyContent: 'center',
+
+        marginRight: 10,
+    },
+
+    analysisContent: {
+        flex: 1,
+    },
+
+    analysisTitle: {
+        color: '#ffffff',
+
+        fontSize: 12,
+
+        fontWeight: '800',
+
+        marginBottom: 3,
+    },
+
+    analysisText: {
+        color:
+            'rgba(255,255,255,0.8)',
+
+        fontSize: 10,
+
+        lineHeight: 16,
+    },
+
+    analysisStrong: {
+        color: '#A8CCFF',
+
+        fontWeight: '800',
+    },
+
+
+    // =================================================
+    // SECTION
+    // =================================================
+
+    sectionHeader: {
+        flexDirection: 'row',
+
+        alignItems: 'center',
+
+        justifyContent: 'space-between',
+
+        marginBottom: 10,
+    },
+
+    sectionTitle: {
+        color: '#ffffff',
+
+        fontSize: 20,
+
+        fontWeight: '800',
+    },
+
+    sectionSubtitle: {
+        color:
+            'rgba(255,255,255,0.68)',
+
+        fontSize: 10,
+
+        marginTop: 2,
+    },
+
+    recommendBadge: {
+        flexDirection: 'row',
+
+        alignItems: 'center',
+
+        gap: 5,
+
+        backgroundColor: '#ffffff',
+
+        borderRadius: 15,
+
+        paddingHorizontal: 9,
+
+        paddingVertical: 6,
+    },
+
+    recommendBadgeText: {
+        color: '#237FFF',
+
+        fontSize: 9,
+
+        fontWeight: '800',
+    },
+
+
+    // =================================================
+    // HERO
+    // =================================================
+
+    heroCard: {
+        borderRadius: 24,
+
+        padding: 18,
+
+        marginBottom: 19,
+    },
+
+    heroTopRow: {
+        flexDirection: 'row',
+
+        alignItems: 'center',
+
+        justifyContent: 'space-between',
+
+        marginBottom: 14,
+    },
+
+    heroIcon: {
+        width: 55,
+        height: 55,
+
+        borderRadius: 17,
+
+        backgroundColor: '#ffffff',
+
+        alignItems: 'center',
+
+        justifyContent: 'center',
+    },
+
+    heroRecommended: {
+        flexDirection: 'row',
+
+        alignItems: 'center',
+
+        gap: 5,
+
+        paddingHorizontal: 10,
+
+        paddingVertical: 6,
+
+        borderRadius: 15,
+
+        backgroundColor:
+            'rgba(255,255,255,0.2)',
+    },
+
+    heroRecommendedText: {
+        color: '#ffffff',
+
+        fontSize: 9,
+
+        fontWeight: '800',
+    },
+
+    heroTitle: {
+        color: '#ffffff',
+
+        fontSize: 23,
+
+        fontWeight: '800',
+
+        marginBottom: 5,
+    },
+
+    heroDescription: {
+        color:
+            'rgba(255,255,255,0.88)',
+
+        fontSize: 11,
+
+        lineHeight: 17,
+
+        marginBottom: 13,
+    },
+
+    heroInfoRow: {
+        flexDirection: 'row',
+
+        gap: 8,
+    },
+
+    heroInfo: {
+        flexDirection: 'row',
+
+        alignItems: 'center',
+
+        gap: 5,
+
+        backgroundColor:
+            'rgba(255,255,255,0.18)',
+
+        borderRadius: 13,
+
+        paddingHorizontal: 9,
+
+        paddingVertical: 6,
+    },
+
+    heroInfoText: {
+        color: '#ffffff',
+
+        fontSize: 10,
+
+        fontWeight: '700',
+    },
+
+
+    // =================================================
+    // OTHER
+    // =================================================
+
+    otherTitle: {
+        color: '#ffffff',
+
+        fontSize: 14,
+
+        fontWeight: '800',
+
+        marginBottom: 9,
+    },
+
+    exerciseCard: {
+        minHeight: 87,
+
+        backgroundColor: '#ffffff',
+
+        borderRadius: 19,
+
+        padding: 10,
+
+        marginBottom: 10,
+
+        flexDirection: 'row',
+
+        alignItems: 'center',
+
+        borderWidth: 1,
+
+        borderColor: '#ffffff',
+    },
+
+    exerciseCardActive: {
+        borderColor: '#A8CCFF',
+
+        shadowColor: '#000',
+
+        shadowOffset: {
+            width: 0,
+            height: 4,
+        },
+
+        shadowOpacity: 0.14,
+
+        shadowRadius: 7,
+
+        elevation: 4,
+    },
+
+    rankCircle: {
+        width: 27,
+        height: 27,
+
+        borderRadius: 14,
+
+        backgroundColor: '#EEF5FF',
+
+        alignItems: 'center',
+
+        justifyContent: 'center',
+
+        marginRight: 8,
+    },
+
+    rankCircleActive: {
+        backgroundColor: '#237FFF',
+    },
+
+    rankText: {
+        color: '#237FFF',
+
+        fontSize: 10,
+
+        fontWeight: '800',
+    },
+
+    rankTextActive: {
+        color: '#ffffff',
+    },
+
+    exerciseIcon: {
+        width: 48,
+        height: 48,
+
+        borderRadius: 15,
+
+        backgroundColor: '#EEF5FF',
+
+        alignItems: 'center',
+
+        justifyContent: 'center',
+
+        marginRight: 10,
+    },
+
+    exerciseIconActive: {
+        backgroundColor: '#237FFF',
+    },
+
     exerciseContent: {
         flex: 1,
     },
+
     exerciseName: {
-        fontSize: 14,
-        fontWeight: '600',
-        color: '#153c91',
+        color: '#1638AE',
+
+        fontSize: 13,
+
+        fontWeight: '800',
+
+        marginBottom: 2,
     },
+
     exerciseDescription: {
+        color: '#64748b',
+
         fontSize: 10,
-        color: '#777',
-        marginVertical: 3,
+
+        lineHeight: 15,
+
+        marginBottom: 4,
     },
-    exerciseTime: {
+
+    exerciseMeta: {
         flexDirection: 'row',
+
         alignItems: 'center',
-        gap: 5,
+
+        gap: 10,
     },
-    exerciseTimeText: {
-        fontSize: 10,
-        color: '#5d86dd',
+
+    metaItem: {
+        flexDirection: 'row',
+
+        alignItems: 'center',
+
+        gap: 4,
     },
-    exerciseCheck: {
-        width: 25,
-        height: 25,
-        borderRadius: 12.5,
-        borderWidth: 2,
-        borderColor: '#8eb0f5',
+
+    metaText: {
+        color: '#64748b',
+
+        fontSize: 9,
+
+        fontWeight: '600',
+    },
+
+    arrowCircle: {
+        width: 30,
+        height: 30,
+
+        borderRadius: 15,
+
+        backgroundColor: '#EEF5FF',
+
+        alignItems: 'center',
+
         justifyContent: 'center',
+
+        marginLeft: 7,
+    },
+
+    arrowCircleActive: {
+        backgroundColor: '#237FFF',
+    },
+
+
+    // =================================================
+    // SAFETY
+    // =================================================
+
+    safetyCard: {
+        backgroundColor: '#ffffff',
+
+        borderRadius: 20,
+
+        padding: 14,
+
+        flexDirection: 'row',
+
         alignItems: 'center',
-    },
-    exerciseCheckSelected: {
-        backgroundColor: '#2360e8',
-        borderColor: '#2360e8',
-    },
-    saveButtonWrap: {
-        width: '100%',
-        marginTop: 3,
+
+        marginTop: 5,
+
         marginBottom: 12,
     },
-    saveButton: {
-        height: 52,
-        borderRadius: 27,
-        flexDirection: 'row',
-        justifyContent: 'center',
+
+    safetyIcon: {
+        width: 38,
+        height: 38,
+
+        borderRadius: 19,
+
+        backgroundColor: '#EEF5FF',
+
         alignItems: 'center',
+
+        justifyContent: 'center',
+
+        marginRight: 10,
     },
-    saveText: {
-        color: 'white',
-        fontSize: 16,
-        fontWeight: 'bold',
+
+    safetyContent: {
+        flex: 1,
     },
+
+    safetyTitle: {
+        color: '#1638AE',
+
+        fontSize: 12,
+
+        fontWeight: '800',
+
+        marginBottom: 2,
+    },
+
+    safetyText: {
+        color: '#64748b',
+
+        fontSize: 10,
+
+        lineHeight: 15,
+    },
+
+
+    // =================================================
+    // START
+    // =================================================
+
+    startButton: {
+        minHeight: 72,
+
+        borderRadius: 23,
+
+        paddingHorizontal: 18,
+
+        paddingVertical: 10,
+
+        flexDirection: 'row',
+
+        alignItems: 'center',
+
+        justifyContent: 'space-between',
+
+        marginBottom: 10,
+    },
+
+    startSmall: {
+        color:
+            'rgba(255,255,255,0.75)',
+
+        fontSize: 9,
+
+        fontWeight: '700',
+    },
+
+    startText: {
+        color: '#ffffff',
+
+        fontSize: 24,
+
+        fontWeight: '800',
+
+        marginTop: 1,
+    },
+
+    startArrow: {
+        width: 45,
+        height: 45,
+
+        borderRadius: 23,
+
+        backgroundColor: '#ffffff',
+
+        alignItems: 'center',
+
+        justifyContent: 'center',
+    },
+
+
+    // =================================================
+    // RETAKE
+    // =================================================
+
+    retakeButton: {
+        height: 45,
+
+        borderRadius: 23,
+
+        backgroundColor: '#ffffff',
+
+        alignItems: 'center',
+
+        justifyContent: 'center',
+
+        flexDirection: 'row',
+
+        gap: 7,
+
+        marginBottom: 12,
+    },
+
+    retakeText: {
+        color: '#237FFF',
+
+        fontSize: 12,
+
+        fontWeight: '800',
+    },
+
+
+    // =================================================
+    // DISCLAIMER
+    // =================================================
+
+    disclaimer: {
+        color:
+            'rgba(255,255,255,0.5)',
+
+        fontSize: 9,
+
+        lineHeight: 14,
+
+        textAlign: 'center',
+
+        paddingHorizontal: 15,
+
+        marginBottom: 14,
+    },
+
+
+    // =================================================
+    // BOTTOM NAV
+    // =================================================
+
+    bottomNav: {
+        marginTop: 2,
+    },
+
+
+    // =================================================
+    // EMPTY
+    // =================================================
+
+    emptyContainer: {
+        flex: 1,
+
+        alignItems: 'center',
+
+        justifyContent: 'center',
+
+        paddingHorizontal: 20,
+    },
+
+    emptyIcon: {
+        width: 75,
+        height: 75,
+
+        borderRadius: 38,
+
+        backgroundColor: '#ffffff',
+
+        alignItems: 'center',
+
+        justifyContent: 'center',
+
+        marginBottom: 16,
+    },
+
+    emptyTitle: {
+        color: '#ffffff',
+
+        fontSize: 21,
+
+        fontWeight: '800',
+
+        marginBottom: 6,
+    },
+
+    emptyText: {
+        color:
+            'rgba(255,255,255,0.75)',
+
+        fontSize: 12,
+
+        lineHeight: 19,
+
+        textAlign: 'center',
+
+        marginBottom: 20,
+    },
+
+    emptyButton: {
+        height: 50,
+
+        paddingHorizontal: 23,
+
+        borderRadius: 25,
+
+        alignItems: 'center',
+
+        justifyContent: 'center',
+
+        flexDirection: 'row',
+
+        gap: 8,
+    },
+
+    emptyButtonText: {
+        color: '#ffffff',
+
+        fontSize: 13,
+
+        fontWeight: '800',
+    },
+
 });

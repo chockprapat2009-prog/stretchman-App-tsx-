@@ -6,23 +6,18 @@ import {
     ScrollView,
     TouchableOpacity,
     Alert,
-    Modal,
-    TextInput,
-    Image,
 } from 'react-native';
 import { FontAwesome6 } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import BottomNav from './components/BottomNav';
 
-export default function SettingsScreen() {
+export default function ProfileScreen() {
     const router = useRouter();
     const [name, setName] = useState('Bagja Alfatih');
     const [email, setEmail] = useState('bagjaalfatih17@gmail.com');
 
-    const [isEditModalVisible, setIsEditModalVisible] = useState(false);
-    const [tempName, setTempName] = useState('');
-
+    // ดึงข้อมูลชื่อล่าสุดจาก AsyncStorage เมื่อหน้านี้ถูกโฟกัส
     const loadSettings = async () => {
         try {
             const storedName = await AsyncStorage.getItem('stretchmanName');
@@ -37,14 +32,6 @@ export default function SettingsScreen() {
             loadSettings();
         }, [])
     );
-
-    const handleSaveName = async () => {
-        if (tempName.trim()) {
-            setName(tempName.trim());
-            await AsyncStorage.setItem('stretchmanName', tempName.trim());
-            setIsEditModalVisible(false);
-        }
-    };
 
     const handleLogout = () => {
         Alert.alert(
@@ -82,21 +69,21 @@ export default function SettingsScreen() {
             >
                 {/* USER PROFILE HEADER */}
                 <View style={styles.profileHeaderCard}>
-                    <View style={styles.avatarWrapper}>
+                    <TouchableOpacity 
+                        style={styles.avatarWrapper}
+                        onPress={() => router.push('/my-profile')}
+                    >
                         <View style={styles.avatarContainer}>
                             <FontAwesome6 name="user" size={28} color="#64748B" />
                         </View>
-                    </View>
+                    </TouchableOpacity>
                     <View style={styles.profileInfo}>
                         <TouchableOpacity 
                             style={styles.nameRow}
-                            onPress={() => {
-                                setTempName(name);
-                                setIsEditModalVisible(true);
-                            }}
+                            onPress={() => router.push('/my-profile')}
                         >
                             <Text style={styles.profileNameText}>{name}</Text>
-                            <FontAwesome6 name="pen" size={12} color="#94A3B8" style={{ marginLeft: 6 }} />
+                            <FontAwesome6 name="angle-right" size={14} color="#94A3B8" style={{ marginLeft: 8 }} />
                         </TouchableOpacity>
                         <Text style={styles.profileEmailText}>{email}</Text>
                     </View>
@@ -113,7 +100,7 @@ export default function SettingsScreen() {
                     </TouchableOpacity>
 
                     {/* Settings */}
-                    <TouchableOpacity style={styles.menuItem} onPress={() => {}}>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/settings')}>
                         <View style={styles.menuIconContainer}>
                             <FontAwesome6 name="gear" size={16} color="#475569" />
                         </View>
@@ -161,36 +148,6 @@ export default function SettingsScreen() {
                     </TouchableOpacity>
                 </View>
             </ScrollView>
-
-            {/* EDIT PROFILE MODAL */}
-            <Modal visible={isEditModalVisible} transparent animationType="fade">
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>แก้ไขชื่อผู้ใช้</Text>
-                        <TextInput
-                            style={styles.modalInput}
-                            value={tempName}
-                            onChangeText={setTempName}
-                            placeholder="ใส่ชื่อของคุณ"
-                            placeholderTextColor="#94A3B8"
-                        />
-                        <View style={styles.modalButtons}>
-                            <TouchableOpacity
-                                style={[styles.modalBtn, styles.cancelBtn]}
-                                onPress={() => setIsEditModalVisible(false)}
-                            >
-                                <Text style={styles.cancelBtnText}>ยกเลิก</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.modalBtn, styles.saveBtn]}
-                                onPress={handleSaveName}
-                            >
-                                <Text style={styles.saveBtnText}>บันทึก</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-            </Modal>
 
             {/* BOTTOM NAV */}
             <View style={styles.bottomNavContainer}>
@@ -293,61 +250,6 @@ const styles = StyleSheet.create({
         fontSize: 15,
         color: '#1E293B',
         fontWeight: '500',
-    },
-
-    /* MODAL */
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.4)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    modalContent: {
-        width: '85%',
-        backgroundColor: '#FFFFFF',
-        borderRadius: 20,
-        padding: 20,
-        alignItems: 'center',
-    },
-    modalTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        marginBottom: 15,
-        color: '#0F172A',
-    },
-    modalInput: {
-        width: '100%',
-        backgroundColor: '#F1F5F9',
-        borderRadius: 12,
-        padding: 12,
-        fontSize: 14,
-        color: '#0F172A',
-        marginBottom: 20,
-    },
-    modalButtons: {
-        flexDirection: 'row',
-        gap: 10,
-        width: '100%',
-    },
-    modalBtn: {
-        flex: 1,
-        padding: 12,
-        borderRadius: 10,
-        alignItems: 'center',
-    },
-    cancelBtn: {
-        backgroundColor: '#E2E8F0',
-    },
-    cancelBtnText: {
-        color: '#475569',
-        fontWeight: '600',
-    },
-    saveBtn: {
-        backgroundColor: '#2563EB',
-    },
-    saveBtnText: {
-        color: '#FFFFFF',
-        fontWeight: '600',
     },
 
     bottomNavContainer: {
