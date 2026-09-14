@@ -67,15 +67,11 @@ interface SafetyQuestionProps {
 // =====================================================
 
 const PAIN_AREAS: PainArea[] = [
+    // กลางลำตัว
     {
         id: 'neck',
         label: 'คอ',
         icon: 'person',
-    },
-    {
-        id: 'shoulder',
-        label: 'ไหล่',
-        icon: 'child-reaching',
     },
     {
         id: 'upper_back',
@@ -87,31 +83,70 @@ const PAIN_AREAS: PainArea[] = [
         label: 'หลังส่วนล่าง',
         icon: 'person',
     },
+
+    // ซ้าย / ขวา
     {
-        id: 'arm',
-        label: 'แขน',
+        id: 'shoulder_left',
+        label: 'ไหล่ซ้าย',
+        icon: 'child-reaching',
+    },
+    {
+        id: 'shoulder_right',
+        label: 'ไหล่ขวา',
+        icon: 'child-reaching',
+    },
+    {
+        id: 'arm_left',
+        label: 'แขนซ้าย',
         icon: 'hand',
     },
     {
-        id: 'wrist',
-        label: 'ข้อมือ',
+        id: 'arm_right',
+        label: 'แขนขวา',
         icon: 'hand',
     },
     {
-        id: 'hip',
-        label: 'สะโพก',
+        id: 'wrist_left',
+        label: 'ข้อมือซ้าย',
+        icon: 'hand',
+    },
+    {
+        id: 'wrist_right',
+        label: 'ข้อมือขวา',
+        icon: 'hand',
+    },
+    {
+        id: 'hip_left',
+        label: 'สะโพกซ้าย',
         icon: 'person',
     },
     {
-        id: 'thigh',
-        label: 'ต้นขา',
+        id: 'hip_right',
+        label: 'สะโพกขวา',
+        icon: 'person',
+    },
+    {
+        id: 'thigh_left',
+        label: 'ต้นขาซ้าย',
         icon: 'person-running',
     },
     {
-        id: 'calf',
-        label: 'น่อง',
+        id: 'thigh_right',
+        label: 'ต้นขาขวา',
         icon: 'person-running',
     },
+    {
+        id: 'calf_left',
+        label: 'น่องซ้าย',
+        icon: 'person-running',
+    },
+    {
+        id: 'calf_right',
+        label: 'น่องขวา',
+        icon: 'person-running',
+    },
+
+    // อื่น ๆ
     {
         id: 'other',
         label: 'อื่น ๆ',
@@ -824,7 +859,7 @@ export default function PainQuestionnaireScreen() {
                     'คุณมีอาการปวด\nบริเวณไหน?'
                 }
                 subtitle={
-                    'เลือกได้มากกว่า 1 บริเวณ'
+                    'เลือกได้มากกว่า 1 บริเวณ และสามารถแยกซ้าย / ขวาได้'
                 }
                 error={
                     errors.q1
@@ -1162,32 +1197,6 @@ export default function PainQuestionnaireScreen() {
                                             </View>
 
 
-                                            <View
-                                                style={
-                                                    styles.levelBadge
-                                                }
-                                            >
-
-                                                <Text
-                                                    style={
-                                                        styles.levelBadgeNumber
-                                                    }
-                                                >
-                                                    {
-                                                        currentLevel ??
-                                                        0
-                                                    }
-                                                </Text>
-
-                                                <Text
-                                                    style={
-                                                        styles.levelBadgeMax
-                                                    }
-                                                >
-                                                    /10
-                                                </Text>
-
-                                            </View>
 
                                         </View>
 
@@ -1213,6 +1222,7 @@ export default function PainQuestionnaireScreen() {
                                                     )
                                             }
                                         />
+
 
 
                                         <Text
@@ -1987,23 +1997,13 @@ function PainSlider({
     onChange,
 }: PainSliderProps) {
 
-    const sliderWidth =
-        useRef(0);
-
-    const safeValue =
-        value ?? 0;
-
-    const onChangeRef =
-        useRef(onChange);
-
+    const sliderWidth = useRef(0);
+    const safeValue = value ?? 0;
+    const onChangeRef = useRef(onChange);
 
     useEffect(() => {
-
-        onChangeRef.current =
-            onChange;
-
+        onChangeRef.current = onChange;
     }, [onChange]);
-
 
     // =================================================
     // PAIN COLORS 0 -> 10
@@ -2014,239 +2014,124 @@ function PainSlider({
         string, string, string, string, string,
         string
     ] = [
-        '#166534', // 0  เขียวเข้ม
+        '#166534', // 0
         '#238636', // 1
         '#3FA34D', // 2
         '#69B34C', // 3
         '#A4C639', // 4
-        '#EAB308', // 5  เหลือง
+        '#EAB308', // 5
         '#F59E0B', // 6
-        '#F97316', // 7  ส้ม
-        '#EF4444', // 8  แดง
+        '#F97316', // 7
+        '#EF4444', // 8
         '#DC2626', // 9
-        '#991B1B', // 10 แดงเข้ม
+        '#991B1B', // 10
     ];
 
-
-    const getPainColor = (
-        level: number
-    ) => {
-
+    const getPainColor = (level: number) => {
         const safeLevel = Math.max(
             0,
-            Math.min(
-                10,
-                Math.round(level)
-            )
+            Math.min(10, Math.round(level))
         );
-
         return painColors[safeLevel];
     };
 
-
-    const painColor =
-        getPainColor(safeValue);
-
+    const painColor = getPainColor(safeValue);
 
     // =================================================
     // LEVEL FROM POSITION
     // =================================================
 
-    const getLevelFromPosition = (
-        locationX: number
-    ) => {
-
-        if (
-            sliderWidth.current <= 0
-        ) {
+    const getLevelFromPosition = (locationX: number) => {
+        if (sliderWidth.current <= 0) {
             return;
         }
 
-
-        const ratio =
-            Math.max(
-                0,
-                Math.min(
-                    1,
-                    locationX /
-                    sliderWidth.current
-                )
-            );
-
-
-        const level =
-            Math.round(
-                ratio * 10
-            );
-
-
-        onChangeRef.current(
-            level
+        const ratio = Math.max(
+            0,
+            Math.min(1, locationX / sliderWidth.current)
         );
 
+        const level = Math.round(ratio * 10);
+        onChangeRef.current(level);
     };
-
 
     // =================================================
     // PAN RESPONDER
     // =================================================
 
-    const responder =
-        useRef(
-            PanResponder.create({
+    const responder = useRef(
+        PanResponder.create({
+            onStartShouldSetPanResponder: () => true,
+            onMoveShouldSetPanResponder: () => true,
 
-                onStartShouldSetPanResponder:
-                    () => true,
+            onPanResponderGrant: event => {
+                getLevelFromPosition(
+                    event.nativeEvent.locationX
+                );
+            },
 
-                onMoveShouldSetPanResponder:
-                    () => true,
-
-                onPanResponderGrant:
-                    event => {
-
-                        getLevelFromPosition(
-                            event.nativeEvent
-                                .locationX
-                        );
-
-                    },
-
-                onPanResponderMove:
-                    event => {
-
-                        getLevelFromPosition(
-                            event.nativeEvent
-                                .locationX
-                        );
-
-                    },
-
-            })
-        ).current;
-
+            onPanResponderMove: event => {
+                getLevelFromPosition(
+                    event.nativeEvent.locationX
+                );
+            },
+        })
+    ).current;
 
     return (
-
-        <View
-            style={
-                styles.sliderWrapper
-            }
-        >
+        <View style={styles.sliderWrapper}>
 
             {/* TOP */}
-
-            <View
-                style={
-                    styles.sliderTop
-                }
-            >
-
-                <Text
-                    style={
-                        styles.sliderCaption
-                    }
-                >
-                    เลื่อนเพื่อเลือกระดับความปวด
-                </Text>
-
-
+            <View style={styles.sliderTop}>
                 <View
                     style={[
                         styles.sliderLevelBubble,
                         {
-                            backgroundColor:
-                                painColor,
+                            backgroundColor: painColor,
                         },
                     ]}
                 >
-
-                    <Text
-                        style={
-                            styles.sliderLevelBubbleText
-                        }
-                    >
+                    <Text style={styles.sliderLevelBubbleText}>
                         {safeValue}
                     </Text>
-
                 </View>
-
             </View>
 
-
             {/* SLIDER */}
-
             <View
-                style={
-                    styles.sliderTouchArea
-                }
-
+                style={styles.sliderTouchArea}
                 {...responder.panHandlers}
-
                 onLayout={event => {
-
                     sliderWidth.current =
-                        event.nativeEvent
-                            .layout.width;
-
+                        event.nativeEvent.layout.width;
                 }}
             >
-
                 {/* TRACK BACKGROUND */}
-
-                <View
-                    style={
-                        styles.sliderTrackBackground
-                    }
-                >
-
+                <View style={styles.sliderTrackBackground}>
                     <View
                         style={[
                             styles.sliderTrackFillClip,
                             {
-                                width:
-                                    `${safeValue * 10}%`,
+                                width: `${safeValue * 10}%`,
                             },
                         ]}
                     >
-
                         <LinearGradient
                             colors={painColors}
-                            start={{
-                                x: 0,
-                                y: 0,
-                            }}
-                            end={{
-                                x: 1,
-                                y: 0,
-                            }}
-                            style={
-                                styles.sliderTrackFillGradient
-                            }
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 0 }}
+                            style={styles.sliderTrackFillGradient}
                         />
-
                     </View>
-
                 </View>
 
-
                 {/* COLOR TICKS 0 - 10 */}
-
-                <View
-                    style={
-                        styles.sliderTicks
-                    }
-                >
-
+                <View style={styles.sliderTicks}>
                     {Array.from(
-                        {
-                            length: 11,
-                        },
+                        { length: 11 },
                         (_, index) => (
-
                             <View
-                                key={
-                                    index
-                                }
+                                key={index}
                                 style={[
                                     styles.sliderTick,
                                     {
@@ -2254,148 +2139,82 @@ function PainSlider({
                                             getPainColor(index),
                                     },
                                     index === safeValue &&
-                                    styles.sliderTickSelected,
+                                        styles.sliderTickSelected,
                                 ]}
                             />
-
                         )
                     )}
-
                 </View>
 
-
                 {/* THUMB */}
-
                 <View
                     pointerEvents="none"
                     style={[
                         styles.sliderThumb,
                         {
-                            left:
-                                `${safeValue * 10}%`,
-                            borderColor:
-                                painColor,
+                            left: `${safeValue * 10}%`,
+                            borderColor: painColor,
                         },
                     ]}
                 >
-
                     <View
                         style={[
                             styles.sliderThumbInner,
                             {
-                                backgroundColor:
-                                    painColor,
+                                backgroundColor: painColor,
                             },
                         ]}
                     />
-
                 </View>
-
             </View>
 
-
             {/* SCALE LABELS */}
-
-            <View
-                style={
-                    styles.sliderLabels
-                }
-            >
-
-                <View
-                    style={
-                        styles.sliderScaleItem
-                    }
-                >
-
+            <View style={styles.sliderLabels}>
+                <View style={styles.sliderScaleItem}>
                     <Text
                         style={[
                             styles.sliderScaleNumber,
-                            {
-                                color:
-                                    getPainColor(0),
-                            },
+                            { color: getPainColor(0) },
                         ]}
                     >
                         0
                     </Text>
-
-                    <Text
-                        style={
-                            styles.sliderScaleText
-                        }
-                    >
+                    <Text style={styles.sliderScaleText}>
                         ไม่ปวด
                     </Text>
-
                 </View>
 
-
-                <View
-                    style={
-                        styles.sliderScaleItemCenter
-                    }
-                >
-
+                <View style={styles.sliderScaleItemCenter}>
                     <Text
                         style={[
                             styles.sliderScaleNumber,
-                            {
-                                color:
-                                    getPainColor(5),
-                            },
+                            { color: getPainColor(5) },
                         ]}
                     >
                         5
                     </Text>
-
-                    <Text
-                        style={
-                            styles.sliderScaleText
-                        }
-                    >
+                    <Text style={styles.sliderScaleText}>
                         ปานกลาง
                     </Text>
-
                 </View>
 
-
-                <View
-                    style={
-                        styles.sliderScaleItemRight
-                    }
-                >
-
+                <View style={styles.sliderScaleItemRight}>
                     <Text
                         style={[
                             styles.sliderScaleNumber,
-                            {
-                                color:
-                                    getPainColor(10),
-                            },
+                            { color: getPainColor(10) },
                         ]}
                     >
                         10
                     </Text>
-
-                    <Text
-                        style={
-                            styles.sliderScaleText
-                        }
-                    >
+                    <Text style={styles.sliderScaleText}>
                         ปวดมาก
                     </Text>
-
                 </View>
-
             </View>
-
         </View>
-
     );
-
 }
-
 
 // =====================================================
 // SAFETY QUESTION
@@ -3188,43 +3007,6 @@ const styles = StyleSheet.create({
         marginTop: 2,
     },
 
-    levelBadge: {
-        minWidth: 58,
-
-        height: 36,
-
-        paddingHorizontal: 8,
-
-        borderRadius: 12,
-
-        backgroundColor: '#EEF5FF',
-
-        flexDirection: 'row',
-
-        alignItems: 'baseline',
-
-        justifyContent: 'center',
-
-        marginLeft: 10,
-    },
-
-    levelBadgeNumber: {
-        color: '#237FFF',
-
-        fontSize: 19,
-
-        fontWeight: '800',
-    },
-
-    levelBadgeMax: {
-        color: '#64748b',
-
-        fontSize: 9,
-
-        fontWeight: '700',
-
-        marginLeft: 2,
-    },
 
     smallLabel: {
         color: '#64748b',
@@ -3246,17 +3028,10 @@ const styles = StyleSheet.create({
     },
 
     sliderTop: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
+        alignItems: 'flex-end',
         marginBottom: 6,
     },
 
-    sliderCaption: {
-        color: '#94a3b8',
-        fontSize: 9,
-        fontWeight: '600',
-    },
 
     sliderLevelBubble: {
         width: 34,
@@ -3343,10 +3118,12 @@ const styles = StyleSheet.create({
 
     sliderLabels: {
         flexDirection: 'row',
-        alignItems: 'flex-start',
+        alignItems: 'center',
         justifyContent: 'space-between',
-        marginTop: 2,
+        marginTop: 4,
+        paddingHorizontal: 2,
     },
+
 
     sliderScaleItem: {
         alignItems: 'flex-start',

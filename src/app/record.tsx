@@ -1,5 +1,6 @@
 import React, {
     useCallback,
+    useEffect,
     useMemo,
     useState,
 } from 'react';
@@ -12,12 +13,12 @@ import {
     Text,
     TouchableOpacity,
     View,
-    DimensionValue,
 } from 'react-native';
 
 import { FontAwesome6 } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Asset } from 'expo-asset';
 import {
     router,
     useFocusEffect,
@@ -64,13 +65,23 @@ interface ExerciseItem {
 const AREA_LABELS: Record<string, string> = {
     neck: 'คอ',
     shoulder: 'ไหล่',
+    shoulder_left: 'ไหล่ซ้าย',
+    shoulder_right: 'ไหล่ขวา',
     upper_back: 'หลังส่วนบน',
     lower_back: 'หลังส่วนล่าง',
     arm: 'แขน',
+    arm_left: 'แขนซ้าย',
+    arm_right: 'แขนขวา',
     wrist: 'ข้อมือ',
-    hip: 'สะโพก',
+    wrist_left: 'ข้อมือซ้าย',
+    wrist_right: 'ข้อมือขวา',
+    waist: 'เอว',
     thigh: 'ต้นขา',
+    thigh_left: 'ต้นขาซ้าย',
+    thigh_right: 'ต้นขาขวา',
     calf: 'น่อง',
+    calf_left: 'น่องซ้าย',
+    calf_right: 'น่องขวา',
     other: 'อื่น ๆ',
 };
 
@@ -83,68 +94,50 @@ const AREA_LABELS: Record<string, string> = {
 const BODY_POSITIONS: Record<
     string,
     {
-        top: DimensionValue;
-        left: DimensionValue;
+        x: number;
+        y: number;
         size: number;
     }
 > = {
 
-    neck: {
-        top: '10%',
-        left: '50%',
-        size: 30,
-    },
+    // จุดกึ่งกลางลำตัว
+    neck: { x: 50, y: 17, size: 30 },
+    upper_back: { x: 50, y: 25, size: 30 },
+    lower_back: { x: 50, y: 35, size: 30 },
+    hip: { x: 50, y: 46, size: 30 },
+    waist: { x: 50, y: 47, size: 30 },
+    
 
-    shoulder: {
-        top: '20%',
-        left: '34%',
-        size: 34,
-    },
+    // ไหล่ซ้าย / ขวา
+    shoulder_left: { x: 34, y: 20, size: 30 },
+    shoulder_right: { x: 66, y: 20, size: 30 },
 
-    upper_back: {
-        top: '29%',
-        left: '50%',
-        size: 36,
-    },
+    // แขนซ้าย / ขวา
+    arm_left: { x: 25, y: 31, size: 30 },
+    arm_right: { x: 75, y: 31, size: 30 },
 
-    lower_back: {
-        top: '45%',
-        left: '50%',
-        size: 40,
-    },
+    // ข้อมือซ้าย / ขวา
+    wrist_left: { x: 19, y: 50, size: 30 },
+    wrist_right: { x: 81, y: 50, size: 30 },
 
-    arm: {
-        top: '32%',
-        left: '23%',
-        size: 32,
-    },
 
-    wrist: {
-        top: '50%',
-        left: '17%',
-        size: 28,
-    },
+    // ต้นขาซ้าย / ขวา
+    thigh_left: { x: 40, y: 65, size: 30 },
+    thigh_right: { x: 60, y: 65, size: 30 },
 
-    hip: {
-        top: '59%',
-        left: '50%',
-        size: 40,
-    },
+    // น่องซ้าย / ขวา
+    calf_left: { x: 40, y: 80, size: 30 },
+    calf_right: { x: 60, y: 80, size: 30 },
 
-    thigh: {
-        top: '73%',
-        left: '43%',
-        size: 36,
-    },
-
-    calf: {
-        top: '88%',
-        left: '43%',
-        size: 32,
-    },
-
+    // เก็บ key เดิมไว้ชั่วคราวเพื่อรองรับข้อมูลเก่า
+    shoulder: { x: 50, y: 20, size: 30 },
+    arm: { x: 50, y: 31, size: 30 },
+    wrist: { x: 50, y: 50, size: 30 },
+    thigh: { x: 50, y: 65, size: 30 },
+    calf: { x: 50, y: 80, size: 30 },
 };
 
+const BODY_IMAGE = require('../../assets/images/back.png');
 
 // =====================================================
 // PAIN COLOR
@@ -211,6 +204,20 @@ const getPainLabel = (
     }
 
     return 'ปวดมากมาก';
+};
+
+
+// =====================================================
+// EXERCISE AREA KEY
+// ใช้ข้อมูลท่าเดิมร่วมกับบริเวณที่แยกซ้าย/ขวา
+// =====================================================
+
+const getExerciseAreaKey = (area: string) => {
+    if (area.endsWith('_left') || area.endsWith('_right')) {
+        return area.replace(/_(left|right)$/, '');
+    }
+
+    return area;
 };
 
 
@@ -377,14 +384,14 @@ const EXERCISE_DATABASE: Record<
     // HIP
     // -------------------------------------------------
 
-    hip: [
+    waist: [
         {
-            id: 'hip-stretch',
-            name: 'ยืดสะโพก',
+            id: 'waist-stretch',
+            name: 'ยืดเอว',
             description:
-                'ยืดกล้ามเนื้อบริเวณสะโพกอย่างนุ่มนวล',
+                'ยืดกล้ามเนื้อบริเวณเอวอย่างนุ่มนวล',
             time: 20,
-            area: 'hip',
+            area: 'waist',
         },
     ],
 
@@ -465,6 +472,99 @@ export default function RecordScreen() {
     ] = useState<ExerciseItem | null>(null);
 
 
+    const [bodyMapSize, setBodyMapSize] = useState({
+        width: 0,
+        height: 0,
+    });
+
+    const [bodyImageRatio, setBodyImageRatio] = useState<number | null>(null);
+
+    // อ่านสัดส่วนจริงของ back.png จาก Expo Asset
+    // ไม่พึ่ง Image.resolveAssetSource และไม่พึ่ง onLoad ของ Expo Web
+    useEffect(() => {
+        let mounted = true;
+
+        try {
+            const asset = Asset.fromModule(BODY_IMAGE);
+
+            const updateRatio = () => {
+                const width = Number(asset.width) || 0;
+                const height = Number(asset.height) || 0;
+
+                if (mounted && width > 0 && height > 0) {
+                    setBodyImageRatio(width / height);
+                }
+            };
+
+            updateRatio();
+
+            asset.downloadAsync()
+                .then(() => {
+                    updateRatio();
+                })
+                .catch(() => {
+                    // ใช้ค่าที่อ่านได้จาก Asset ถ้ามี
+                });
+        } catch {
+            // ไม่ทำอะไร ป้องกันหน้าจอพัง
+        }
+
+        return () => {
+            mounted = false;
+        };
+    }, []);
+
+    // พื้นที่นี้คือ "พื้นที่ของรูปจริง" ที่ถูกแสดงแบบ contain
+    // จุดทั้งหมดจะถูกวางอยู่ภายในพื้นที่เดียวกับรูป จึงไม่หลุดเมื่อจอเปลี่ยนขนาด
+    const imageFrame = useMemo(() => {
+        const containerWidth = bodyMapSize.width;
+        const containerHeight = bodyMapSize.height;
+        const ratio = bodyImageRatio;
+
+        if (
+            containerWidth <= 0 ||
+            containerHeight <= 0 ||
+            !ratio ||
+            !Number.isFinite(ratio) ||
+            ratio <= 0
+        ) {
+            return {
+                left: 0,
+                top: 0,
+                width: 0,
+                height: 0,
+            };
+        }
+
+        const containerRatio = containerWidth / containerHeight;
+
+        if (ratio > containerRatio) {
+            const width = containerWidth;
+            const height = width / ratio;
+
+            return {
+                left: 0,
+                top: (containerHeight - height) / 2,
+                width,
+                height,
+            };
+        }
+
+        const height = containerHeight;
+        const width = height * ratio;
+
+        return {
+            left: (containerWidth - width) / 2,
+            top: 0,
+            width,
+            height,
+        };
+    }, [
+        bodyMapSize.width,
+        bodyMapSize.height,
+        bodyImageRatio,
+    ]);
+
     // =================================================
     // LOAD ASSESSMENT
     // =================================================
@@ -487,6 +587,7 @@ export default function RecordScreen() {
                 setAssessment(null);
 
                 return;
+
             }
 
 
@@ -501,8 +602,72 @@ export default function RecordScreen() {
                 )
             ) {
 
+                // =================================================
+                // MIGRATE OLD HIP DATA -> WAIST
+                // =================================================
+                // ก่อนหน้านี้ใช้ hip_left / hip_right และอาจมี
+                // hip_lift จากข้อมูลเก่าใน AsyncStorage
+                // หลังเปลี่ยนแบบสอบถามมาเป็น "เอว" เราต้องแปลง
+                // key เก่าให้เป็น waist ก่อนนำไปแสดงผล
+                // เพื่อไม่ให้ Record แสดงชื่อ key ดิบ เช่น hip_right
+                // =================================================
+
+                const migratedPainAreas =
+                    parsed.painAreas.reduce(
+                        (result: PainAreaRecord[], item: PainAreaRecord) => {
+
+                            const isOldHipKey =
+                                item.area === 'hip' ||
+                                item.area === 'hip_left' ||
+                                item.area === 'hip_right' ||
+                                item.area === 'hip_lift';
+
+                            const normalizedArea =
+                                isOldHipKey
+                                    ? 'waist'
+                                    : item.area;
+
+                            const existingIndex =
+                                result.findIndex(
+                                    existing =>
+                                        existing.area === normalizedArea
+                                );
+
+                            if (existingIndex === -1) {
+                                result.push({
+                                    ...item,
+                                    area: normalizedArea,
+                                });
+                            } else if (
+                                item.painLevel >
+                                result[existingIndex].painLevel
+                            ) {
+                                // ถ้ามีทั้งข้อมูลเก่าและใหม่ ให้เก็บข้อมูล
+                                // ที่มีระดับความปวดสูงกว่าไว้
+                                result[existingIndex] = {
+                                    ...item,
+                                    area: normalizedArea,
+                                };
+                            }
+
+                            return result;
+                        },
+                        []
+                    );
+
+                const normalizedAssessment: AssessmentData = {
+                    ...parsed,
+                    painAreas: migratedPainAreas,
+                };
+
+                // บันทึกข้อมูลที่แก้ชื่อแล้วกลับไปด้วย
+                await AsyncStorage.setItem(
+                    'stretchmanPainAssessment',
+                    JSON.stringify(normalizedAssessment)
+                );
+
                 setAssessment(
-                    parsed
+                    normalizedAssessment
                 );
 
             } else {
@@ -590,7 +755,7 @@ export default function RecordScreen() {
 
                     const exercises =
                         EXERCISE_DATABASE[
-                            area.area
+                            getExerciseAreaKey(area.area)
                         ] || [];
 
 
@@ -1265,105 +1430,68 @@ export default function RecordScreen() {
                 >
 
                     <View
-                        style={
-                            styles.bodyMap
-                        }
+                        style={styles.bodyMap}
+                        onLayout={(event) => {
+                            const { width, height } = event.nativeEvent.layout;
+                            setBodyMapSize({ width, height });
+                        }}
                     >
 
-                        <Image
-                            source={
-                                require(
-                                    '../../assets/images/back.png'
-                                )
-                            }
-                            style={
-                                styles.bodyImage
-                            }
-                            resizeMode="contain"
-                        />
+                        {imageFrame.width > 0 && imageFrame.height > 0 && (
+                            <View
+                                style={[
+                                    styles.bodyImageLayer,
+                                    {
+                                        position: 'absolute',
+                                        left: imageFrame.left,
+                                        top: imageFrame.top,
+                                        width: imageFrame.width,
+                                        height: imageFrame.height,
+                                    },
+                                ]}
+                            >
+                                <Image
+                                    source={BODY_IMAGE}
+                                    style={styles.bodyImage}
+                                    resizeMode="contain"
+                                />
 
+                                {sortedAreas.map((area) => {
+                                    const position = BODY_POSITIONS[area.area];
 
-                        {/* PAIN POINTS */}
+                                    if (!position) {
+                                        return null;
+                                    }
 
-                        {sortedAreas.map(
-                            area => {
+                                    const color = getPainColor(area.painLevel);
 
-                                const position =
-                                    BODY_POSITIONS[
-                                        area.area
-                                    ];
-
-
-                                if (!position) {
-                                    return null;
-                                }
-
-
-                                const color =
-                                    getPainColor(
-                                        area.painLevel
-                                    );
-
-
-                                return (
-
-                                    <View
-                                        key={
-                                            area.area
-                                        }
-                                        style={[
-                                            styles.painPoint,
-
-                                            {
-                                                top:
-                                                    position.top,
-
-                                                left:
-                                                    position.left,
-
-                                                width:
-                                                    position.size,
-
-                                                height:
-                                                    position.size,
-
-                                                borderRadius:
-                                                    position.size /
-                                                    2,
-
-                                                backgroundColor:
-                                                    color,
-
-                                                marginLeft:
-                                                    -position.size /
-                                                    2,
-
-                                                marginTop:
-                                                    -position.size /
-                                                    2,
-                                            },
-                                        ]}
-                                    >
-
-                                        <Text
-                                            style={
-                                                styles.painPointText
-                                            }
+                                    return (
+                                        <View
+                                            key={area.area}
+                                            style={[
+                                                styles.painPoint,
+                                                {
+                                                    left: `${position.x}%`,
+                                                    top: `${position.y}%`,
+                                                    width: position.size,
+                                                    height: position.size,
+                                                    borderRadius: position.size / 2,
+                                                    backgroundColor: color,
+                                                    marginLeft: -position.size / 2,
+                                                    marginTop: -position.size / 2,
+                                                },
+                                            ]}
                                         >
-                                            {
-                                                area.painLevel
-                                            }
-                                        </Text>
-
-                                    </View>
-
-                                );
-
-                            }
+                                            <Text style={styles.painPointText}>
+                                                {area.painLevel}
+                                            </Text>
+                                        </View>
+                                    );
+                                })}
+                            </View>
                         )}
 
                     </View>
-
 
                     {/* LEGEND */}
 
@@ -2368,9 +2496,13 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
 
+    bodyImageLayer: {
+        position: 'absolute',
+        overflow: 'visible',
+    },
+
     bodyImage: {
         width: '100%',
-
         height: '100%',
     },
 

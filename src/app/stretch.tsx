@@ -7,6 +7,7 @@ import React, {
 import {
     ActivityIndicator,
     Alert,
+    Platform,
     StyleSheet,
     Text,
     TouchableOpacity,
@@ -25,7 +26,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import BottomNav from './components/BottomNav';
 
-
 // =====================================================
 // TYPES
 // =====================================================
@@ -40,1675 +40,1093 @@ interface SelectedExercise {
     symptom?: string;
 }
 
+interface PosePoint {
+    x: number;
+    y: number;
+    z?: number;
+    visibility?: number;
+}
 
 // =====================================================
 // DEFAULT
 // =====================================================
 
-const DEFAULT_EXERCISE_NAME =
-    'ท่ายืดกล้ามเนื้อ';
+const DEFAULT_EXERCISE_NAME = 'ท่ายืดกล้ามเนื้อ';
+const DEFAULT_EXERCISE_TIME = 20;
 
-const DEFAULT_EXERCISE_TIME =
-    20;
+// MediaPipe Tasks Vision for Web.
+// The model and WASM are loaded only when running in Expo Web.
+const MEDIAPIPE_WASM_URL =
+    'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.34/wasm';
 
+const POSE_MODEL_URL =
+    'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task';
 
 // =====================================================
 // MAIN
 // =====================================================
 
 export default function StretchMotionTracking() {
+    const isWeb = Platform.OS === 'web';
 
     // =================================================
     // EXERCISE DATA
     // =================================================
 
-    const [
-        exercise,
-        setExercise,
-    ] = useState<SelectedExercise | null>(
-        null
-    );
-
-    const [
-        exerciseName,
-        setExerciseName,
-    ] = useState(
-        DEFAULT_EXERCISE_NAME
-    );
-
-    const [
-        exerciseTime,
-        setExerciseTime,
-    ] = useState(
-        DEFAULT_EXERCISE_TIME
-    );
-
-    const [
-        loadingExercise,
-        setLoadingExercise,
-    ] = useState(true);
-
+    const [exercise, setExercise] = useState<SelectedExercise | null>(null);
+    const [exerciseName, setExerciseName] = useState(DEFAULT_EXERCISE_NAME);
+    const [exerciseTime, setExerciseTime] = useState(DEFAULT_EXERCISE_TIME);
+    const [loadingExercise, setLoadingExercise] = useState(true);
 
     // =================================================
     // CAMERA
     // =================================================
 
-    const [
-        permission,
-        requestPermission,
-    ] = useCameraPermissions();
+    const [permission, requestPermission] = useCameraPermissions();
+    const [cameraType, setCameraType] = useState<CameraType>('front');
+    const [cameraRunning, setCameraRunning] = useState(false);
 
-    const [
-        cameraType,
-        setCameraType,
-    ] = useState<CameraType>('front');
+    // =================================================
+    // AI TRACKING
+    // =================================================
 
-    const [
-        cameraRunning,
-        setCameraRunning,
-    ] = useState(false);
-
+    const [aiReady, setAiReady] = useState(false);
+    const [poseDetected, setPoseDetected] = useState(false);
+    const [poseLandmarks, setPoseLandmarks] = useState<PosePoint[]>([]);
+    const [trackingMessage, setTrackingMessage] = useState(
+        isWeb ? 'กำลังเตรียม AI...' : 'กล้องพร้อมใช้งาน'
+    );
 
     // =================================================
     // TIMER
     // =================================================
 
-    const [
-        remainingSeconds,
-        setRemainingSeconds,
-    ] = useState(
+    const [remainingSeconds, setRemainingSeconds] = useState(
         DEFAULT_EXERCISE_TIME
     );
-
-    const [
-        timerRunning,
-        setTimerRunning,
-    ] = useState(false);
-
-
-    // =================================================
-    // TRACKING MESSAGE
-    // =================================================
-
-    const [
-        trackingMessage,
-        setTrackingMessage,
-    ] = useState(
-        'กำลังเตรียมท่า...'
-    );
-
+    const [timerRunning, setTimerRunning] = useState(false);
 
     // =================================================
     // REFS
-    // =================================================
+    // =====================================================
 
-    const timerRef =
-        useRef<ReturnType<
-            typeof setInterval
-        > | null>(null);
+    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const poseStartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    const startTimeoutRef =
-        useRef<ReturnType<
-            typeof setTimeout
-        > | null>(null);
+    const webVideoRef = useRef<HTMLVideoElement | null>(null);
+    const webStreamRef = useRef<MediaStream | null>(null);
+    const poseLandmarkerRef = useRef<any>(null);
+    const detectionFrameRef = useRef<number | null>(null);
+    const trackerBusyRef = useRef(false);
+    const timerRunningRef = useRef(false);
+    const cameraStartingRef = useRef(false);
+    const poseInitPromiseRef = useRef<Promise<void> | null>(null);
 
-
-    // =================================================
-    // LOAD SELECTED EXERCISE
-    // =================================================
+    // =====================================================
+    // KEEP TIMER REF IN SYNC
+    // =====================================================
 
     useEffect(() => {
+        timerRunningRef.current = timerRunning;
+    }, [timerRunning]);
 
-        const loadExercise =
-            async () => {
+    // =====================================================
+    // LOAD SELECTED EXERCISE
+    // =====================================================
 
-                try {
+    useEffect(() => {
+        const loadExercise = async () => {
+            try {
+                setLoadingExercise(true);
 
-                    setLoadingExercise(true);
+                const storedExercise = await AsyncStorage.getItem(
+                    'stretchmanSelectedExercise'
+                );
 
+                if (storedExercise) {
+                    const parsed: SelectedExercise = JSON.parse(storedExercise);
+                    setExercise(parsed);
 
-                    // ---------------------------------
-                    // 1. โหลด Selected Exercise
-                    // ---------------------------------
-
-                    const storedExercise =
-                        await AsyncStorage.getItem(
-                            'stretchmanSelectedExercise'
-                        );
-
-
-                    if (storedExercise) {
-
-                        const parsed:
-                            SelectedExercise =
-                            JSON.parse(
-                                storedExercise
-                            );
-
-
-                        setExercise(
-                            parsed
-                        );
-
-
-                        if (parsed.name) {
-
-                            setExerciseName(
-                                parsed.name
-                            );
-
-                        }
-
-
-                        // -----------------------------
-                        // ดึงตัวเลขจาก "20 วินาที"
-                        // -----------------------------
-
-                        if (parsed.time) {
-
-                            const parsedTime =
-                                parseInt(
-                                    parsed.time,
-                                    10
-                                );
-
-
-                            if (
-                                !Number.isNaN(
-                                    parsedTime
-                                ) &&
-                                parsedTime > 0
-                            ) {
-
-                                setExerciseTime(
-                                    parsedTime
-                                );
-
-                                setRemainingSeconds(
-                                    parsedTime
-                                );
-
-                            }
-
-                        }
-
-                    } else {
-
-                        // ---------------------------------
-                        // Fallback จาก exerciseName
-                        // ---------------------------------
-
-                        const storedName =
-                            await AsyncStorage.getItem(
-                                'exerciseName'
-                            );
-
-                        const storedTime =
-                            await AsyncStorage.getItem(
-                                'exerciseTime'
-                            );
-
-
-                        if (storedName) {
-
-                            setExerciseName(
-                                storedName
-                            );
-
-                        }
-
-
-                        if (storedTime) {
-
-                            const parsedTime =
-                                parseInt(
-                                    storedTime,
-                                    10
-                                );
-
-
-                            if (
-                                !Number.isNaN(
-                                    parsedTime
-                                ) &&
-                                parsedTime > 0
-                            ) {
-
-                                setExerciseTime(
-                                    parsedTime
-                                );
-
-                                setRemainingSeconds(
-                                    parsedTime
-                                );
-
-                            }
-
-                        }
-
+                    if (parsed.name) {
+                        setExerciseName(parsed.name);
                     }
 
-                } catch (error) {
+                    if (parsed.time) {
+                        const parsedTime = parseInt(parsed.time, 10);
 
-                    console.log(
-                        'Failed to load selected exercise:',
-                        error
-                    );
+                        if (!Number.isNaN(parsedTime) && parsedTime > 0) {
+                            setExerciseTime(parsedTime);
+                            setRemainingSeconds(parsedTime);
+                        }
+                    }
+                } else {
+                    const storedName = await AsyncStorage.getItem('exerciseName');
+                    const storedTime = await AsyncStorage.getItem('exerciseTime');
 
-                } finally {
+                    if (storedName) {
+                        setExerciseName(storedName);
+                    }
 
-                    setLoadingExercise(
-                        false
-                    );
+                    if (storedTime) {
+                        const parsedTime = parseInt(storedTime, 10);
 
+                        if (!Number.isNaN(parsedTime) && parsedTime > 0) {
+                            setExerciseTime(parsedTime);
+                            setRemainingSeconds(parsedTime);
+                        }
+                    }
                 }
-
-            };
-
-
-        loadExercise();
-
-    }, []);
-
-
-    // =================================================
-    // CLEANUP
-    // =================================================
-
-    useEffect(() => {
-
-        return () => {
-
-            if (
-                timerRef.current
-            ) {
-
-                clearInterval(
-                    timerRef.current
-                );
-
-                timerRef.current =
-                    null;
-
+            } catch (error) {
+                console.log('Failed to load selected exercise:', error);
+            } finally {
+                setLoadingExercise(false);
             }
-
-
-            if (
-                startTimeoutRef.current
-            ) {
-
-                clearTimeout(
-                    startTimeoutRef.current
-                );
-
-                startTimeoutRef.current =
-                    null;
-
-            }
-
         };
 
+        loadExercise();
     }, []);
 
+    // =====================================================
+    // INIT REAL MEDIAPIPE TRACKER ON WEB
+    // โหลดหลังผู้ใช้กดเปิดกล้อง เพื่อลดปัญหา browser/bundler
+    // =====================================================
 
-    // =================================================
-    // AUTO START CAMERA
-    // =================================================
-
-    useEffect(() => {
-
-        if (
-            !loadingExercise &&
-            permission?.granted &&
-            !cameraRunning
-        ) {
-
-            handleStartCamera();
-
-        }
-
-    }, [
-        loadingExercise,
-        permission?.granted,
-    ]);
-
-
-    // =================================================
-    // TIMER
-    // =================================================
-
-    useEffect(() => {
-
-        if (!timerRunning) {
+    const initPoseTracker = async () => {
+        if (!isWeb || poseLandmarkerRef.current) {
             return;
         }
 
+        if (poseInitPromiseRef.current) {
+            return poseInitPromiseRef.current;
+        }
 
-        timerRef.current =
-            setInterval(() => {
+        poseInitPromiseRef.current = (async () => {
+            try {
+                setTrackingMessage('กำลังโหลด AI Pose Tracking...');
 
-                setRemainingSeconds(
-                    prev => {
+                const vision = await import('@mediapipe/tasks-vision');
 
-                        if (prev <= 1) {
+                const filesetResolver =
+                    await vision.FilesetResolver.forVisionTasks(
+                        MEDIAPIPE_WASM_URL
+                    );
 
-                            if (
-                                timerRef.current
-                            ) {
+                const landmarker =
+                    await vision.PoseLandmarker.createFromOptions(
+                        filesetResolver,
+                        {
+                            baseOptions: {
+                                modelAssetPath: POSE_MODEL_URL,
+                                delegate: 'CPU',
+                            },
+                            runningMode: 'VIDEO',
+                            numPoses: 1,
+                            minPoseDetectionConfidence: 0.5,
+                            minPosePresenceConfidence: 0.5,
+                            minTrackingConfidence: 0.5,
+                        }
+                    );
 
-                                clearInterval(
-                                    timerRef.current
-                                );
+                poseLandmarkerRef.current = landmarker;
+                setAiReady(true);
+                setTrackingMessage('AI พร้อมแล้ว กำลังตรวจจับท่าทาง...');
+            } catch (error) {
+                // ไม่ใช้ console.error เพราะ Expo Web dev overlay
+                // สามารถแสดง log ของ MediaPipe เป็นหน้าจอ error ได้
+                console.warn('MediaPipe initialization failed:', error);
+                setAiReady(false);
+                setTrackingMessage(
+                    'กล้องพร้อมใช้งาน แต่ AI ยังไม่พร้อม'
+                );
+            } finally {
+                poseInitPromiseRef.current = null;
+            }
+        })();
 
-                                timerRef.current =
-                                    null;
+        return poseInitPromiseRef.current;
+    };
 
+    // =====================================================
+    // WEB POSE DETECTION LOOP
+    // =====================================================
+
+    const stopPoseLoop = () => {
+        if (detectionFrameRef.current !== null) {
+            cancelAnimationFrame(detectionFrameRef.current);
+            detectionFrameRef.current = null;
+        }
+    };
+
+    const runPoseDetection = () => {
+        if (!isWeb) {
+            return;
+        }
+
+        const video = webVideoRef.current;
+        const landmarker = poseLandmarkerRef.current;
+
+        if (!video || !landmarker) {
+            detectionFrameRef.current = requestAnimationFrame(runPoseDetection);
+            return;
+        }
+
+        if (
+            video.readyState >= 2 &&
+            video.videoWidth > 0 &&
+            video.videoHeight > 0 &&
+            !trackerBusyRef.current
+        ) {
+            trackerBusyRef.current = true;
+
+            try {
+                const result = landmarker.detectForVideo(
+                    video,
+                    performance.now()
+                );
+
+                const landmarks = result?.landmarks?.[0] ?? [];
+
+                // 11/12 shoulders, 23/24 hips are used as the minimum body check.
+                const required = [11, 12, 23, 24];
+                const valid = required.every(index => {
+                    const point = landmarks[index];
+                    return (
+                        point &&
+                        (point.visibility === undefined || point.visibility >= 0.45)
+                    );
+                });
+
+                setPoseDetected(valid);
+                setPoseLandmarks(landmarks);
+
+                if (valid) {
+                    setTrackingMessage('✓ ตรวจพบร่างกาย กำลังติดตามท่าทาง');
+
+                    if (!timerRunningRef.current && !poseStartTimeoutRef.current) {
+                        poseStartTimeoutRef.current = setTimeout(() => {
+                            poseStartTimeoutRef.current = null;
+                            if (timerRunningRef.current) {
+                                return;
                             }
 
-
-                            setTimerRunning(
-                                false
-                            );
-
-                            setCameraRunning(
-                                false
-                            );
-
-                            setTrackingMessage(
-                                'ยืดครบเวลาแล้ว ✓'
-                            );
-
-
-                            // -------------------------
-                            // ไป Complete
-                            // -------------------------
-
-                            router.replace(
-                                '/complete' as any
-                            );
-
-
-                            return 0;
-                        }
-
-
-                        return prev - 1;
-
+                            setTrackingMessage('✓ ตรวจพบท่าพร้อมแล้ว กำลังยืด...');
+                            setTimerRunning(true);
+                        }, 700);
                     }
-                );
+                } else {
+                    setTrackingMessage('ขยับให้เห็นช่วงศีรษะ ไหล่ และสะโพกชัดเจน');
 
-            }, 1000);
+                    if (poseStartTimeoutRef.current) {
+                        clearTimeout(poseStartTimeoutRef.current);
+                        poseStartTimeoutRef.current = null;
+                    }
+                }
+            } catch (error) {
+                console.warn('Pose detection error:', error);
+            } finally {
+                trackerBusyRef.current = false;
+            }
+        }
 
+        detectionFrameRef.current = requestAnimationFrame(runPoseDetection);
+    };
+
+    // =====================================================
+    // START POSE LOOP WHEN AI BECOMES READY
+    // =====================================================
+
+    useEffect(() => {
+        if (!isWeb || !cameraRunning || !aiReady) {
+            return;
+        }
+
+        stopPoseLoop();
+        detectionFrameRef.current = requestAnimationFrame(runPoseDetection);
 
         return () => {
+            stopPoseLoop();
+        };
+    }, [aiReady, cameraRunning]);
 
-            if (
-                timerRef.current
-            ) {
+    // =====================================================
+    // START CAMERA
+    // =====================================================
 
-                clearInterval(
-                    timerRef.current
-                );
+    const handleStartCamera = async () => {
+        try {
+            if (isWeb) {
+                if (!navigator.mediaDevices?.getUserMedia) {
+                    Alert.alert(
+                        'ไม่รองรับกล้อง',
+                        'เบราว์เซอร์นี้ไม่สามารถเปิดกล้องสำหรับ AI Motion Tracking ได้'
+                    );
+                    return;
+                }
 
-                timerRef.current =
-                    null;
+                if (webStreamRef.current) {
+                    webStreamRef.current.getTracks().forEach(track => track.stop());
+                }
 
+                if (cameraStartingRef.current) {
+                    return;
+                }
+
+                cameraStartingRef.current = true;
+
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            facingMode: cameraType === 'front' ? 'user' : 'environment',
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 },
+                        },
+                        audio: false,
+                    });
+
+                    webStreamRef.current = stream;
+
+                    const video = webVideoRef.current;
+                    if (!video) {
+                        stream.getTracks().forEach(track => track.stop());
+                        return;
+                    }
+
+                    video.srcObject = stream;
+                    video.muted = true;
+                    video.playsInline = true;
+
+                    await new Promise<void>(resolve => {
+                        if (video.readyState >= 2) {
+                            resolve();
+                            return;
+                        }
+
+                        video.onloadedmetadata = () => resolve();
+                    });
+
+                    await video.play();
+
+                    setCameraRunning(true);
+                    setPoseDetected(false);
+                    setPoseLandmarks([]);
+                    setTimerRunning(false);
+                    setRemainingSeconds(exerciseTime);
+                    setTrackingMessage('กล้องเปิดแล้ว กำลังเตรียม AI...');
+
+                    // เปิดกล้องก่อน แล้วค่อยโหลด AI
+                    await initPoseTracker();
+                } finally {
+                    cameraStartingRef.current = false;
+                }
+
+                stopPoseLoop();
+                if (poseLandmarkerRef.current) {
+                    detectionFrameRef.current = requestAnimationFrame(runPoseDetection);
+                }
+                return;
             }
 
-        };
-
-    }, [timerRunning]);
-
-
-    // =================================================
-    // START CAMERA
-    // =================================================
-
-    const handleStartCamera =
-        async () => {
-
-            if (
-                !permission?.granted
-            ) {
-
-                const result =
-                    await requestPermission();
-
-
-                if (
-                    !result.granted
-                ) {
-
+            if (!permission?.granted) {
+                const result = await requestPermission();
+                if (!result.granted) {
                     Alert.alert(
                         'ไม่สามารถใช้กล้องได้',
                         'กรุณาอนุญาตให้ Stretchman ใช้กล้องในการตรวจท่าทาง'
                     );
-
                     return;
-
                 }
-
             }
 
+            setCameraRunning(true);
+            setTimerRunning(false);
+            setRemainingSeconds(exerciseTime);
+            setTrackingMessage('กล้องพร้อมใช้งาน');
+        } catch (error: any) {
+            console.warn('Failed to start camera:', error);
 
-            // ---------------------------------
-            // Reset previous timer
-            // ---------------------------------
+            const name = error?.name ?? '';
+            let message = 'ตรวจสอบสิทธิ์กล้อง แล้วลองใหม่อีกครั้ง';
 
-            if (
-                timerRef.current
-            ) {
-
-                clearInterval(
-                    timerRef.current
-                );
-
-                timerRef.current =
-                    null;
-
+            if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+                message =
+                    'เบราว์เซอร์ยังไม่อนุญาตให้ใช้กล้อง ให้กดไอคอนกล้อง/การตั้งค่าไซต์ข้าง URL แล้วอนุญาต Camera จากนั้นลองใหม่';
+            } else if (name === 'NotFoundError') {
+                message = 'ไม่พบกล้องในเครื่องนี้';
+            } else if (name === 'NotReadableError') {
+                message = 'กล้องกำลังถูกใช้งานโดยโปรแกรมอื่น กรุณาปิดโปรแกรมนั้นก่อน';
+            } else if (name === 'SecurityError') {
+                message = 'เบราว์เซอร์บล็อกการเข้าถึงกล้อง ตรวจสอบสิทธิ์ของ localhost';
             }
 
+            setTrackingMessage(`เปิดกล้องไม่สำเร็จ: ${name || 'UnknownError'}`);
+            Alert.alert('เปิดกล้องไม่สำเร็จ', message);
+        }
+    };
 
-            if (
-                startTimeoutRef.current
-            ) {
-
-                clearTimeout(
-                    startTimeoutRef.current
-                );
-
-            }
-
-
-            // ---------------------------------
-            // Start Camera
-            // ---------------------------------
-
-            setCameraRunning(
-                true
-            );
-
-            setTimerRunning(
-                false
-            );
-
-            setRemainingSeconds(
-                exerciseTime
-            );
-
-            setTrackingMessage(
-                'กำลังค้นหาตำแหน่งร่างกาย...'
-            );
-
-
-            // ---------------------------------
-            // จำลองการตรวจจับ
-            // ---------------------------------
-
-            startTimeoutRef.current =
-                setTimeout(() => {
-
-                    setTrackingMessage(
-                        '✓ ตรวจพบท่าพร้อมแล้ว กำลังยืด...'
-                    );
-
-                    setTimerRunning(
-                        true
-                    );
-
-                }, 1200);
-
-        };
-
-
-    // =================================================
+    // =====================================================
     // STOP CAMERA
-    // =================================================
-
-    const handleStopCamera =
-        () => {
-
-            if (
-                timerRef.current
-            ) {
-
-                clearInterval(
-                    timerRef.current
-                );
-
-                timerRef.current =
-                    null;
-
-            }
-
-
-            if (
-                startTimeoutRef.current
-            ) {
-
-                clearTimeout(
-                    startTimeoutRef.current
-                );
-
-                startTimeoutRef.current =
-                    null;
-
-            }
-
-
-            setCameraRunning(
-                false
-            );
-
-            setTimerRunning(
-                false
-            );
-
-            setTrackingMessage(
-                'กดเปิดกล้องเพื่อเริ่ม'
-            );
-
-        };
-
-
-    // =================================================
-    // TOGGLE CAMERA
-    // =================================================
-
-    const handleToggleCamera =
-        () => {
-
-            if (cameraRunning) {
-
-                handleStopCamera();
-
-            } else {
-
-                handleStartCamera();
-
-            }
-
-        };
-
-
-    // =================================================
-    // RESET
-    // =================================================
-
-    const handleReset =
-        () => {
-
-            if (
-                timerRef.current
-            ) {
-
-                clearInterval(
-                    timerRef.current
-                );
-
-                timerRef.current =
-                    null;
-
-            }
-
-
-            if (
-                startTimeoutRef.current
-            ) {
-
-                clearTimeout(
-                    startTimeoutRef.current
-                );
-
-                startTimeoutRef.current =
-                    null;
-
-            }
-
-
-            setTimerRunning(
-                false
-            );
-
-            setCameraRunning(
-                false
-            );
-
-            setRemainingSeconds(
-                exerciseTime
-            );
-
-            setTrackingMessage(
-                'พร้อมเริ่ม'
-            );
-
-        };
-
-
-    // =================================================
-    // FLIP CAMERA
-    // =================================================
-
-    const handleFlipCamera =
-        () => {
-
-            setCameraType(
-                current =>
-                    current === 'front'
-                        ? 'back'
-                        : 'front'
-            );
-
-        };
-
-
-    // =================================================
-    // SKIP
-    // =================================================
-
-    const handleSkip =
-        () => {
-
-            if (
-                timerRef.current
-            ) {
-
-                clearInterval(
-                    timerRef.current
-                );
-
-                timerRef.current =
-                    null;
-
-            }
-
-
-            if (
-                startTimeoutRef.current
-            ) {
-
-                clearTimeout(
-                    startTimeoutRef.current
-                );
-
-                startTimeoutRef.current =
-                    null;
-
-            }
-
-
-            setTimerRunning(
-                false
-            );
-
-            setCameraRunning(
-                false
-            );
-
-
-            router.back();
-
-        };
-
-
-    // =================================================
-    // BACK
-    // =================================================
-
-    const handleBack =
-        () => {
-
-            if (
-                timerRef.current
-            ) {
-
-                clearInterval(
-                    timerRef.current
-                );
-
-                timerRef.current =
-                    null;
-
-            }
-
-
-            if (
-                startTimeoutRef.current
-            ) {
-
-                clearTimeout(
-                    startTimeoutRef.current
-                );
-
-                startTimeoutRef.current =
-                    null;
-
-            }
-
-
-            setTimerRunning(
-                false
-            );
-
-            setCameraRunning(
-                false
-            );
-
-
-            router.replace(
-                '/exercise' as any
-            );
-
-        };
-
-
-    // =================================================
-    // LOADING EXERCISE
-    // =================================================
-
-    if (
-        loadingExercise
-    ) {
-
-        return (
-
-            <View
-                style={
-                    styles.permissionContainer
-                }
-            >
-
-                <ActivityIndicator
-                    size="large"
-                    color="#ffffff"
-                />
-
-
-                <Text
-                    style={
-                        styles.permissionText
+    // =====================================================
+
+    const handleStopCamera = () => {
+        if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+        }
+
+        if (poseStartTimeoutRef.current) {
+            clearTimeout(poseStartTimeoutRef.current);
+            poseStartTimeoutRef.current = null;
+        }
+
+        stopPoseLoop();
+
+        if (webStreamRef.current) {
+            webStreamRef.current.getTracks().forEach(track => track.stop());
+            webStreamRef.current = null;
+        }
+
+        if (webVideoRef.current) {
+            webVideoRef.current.pause();
+            webVideoRef.current.srcObject = null;
+        }
+
+        setCameraRunning(false);
+        setTimerRunning(false);
+        setPoseDetected(false);
+        setPoseLandmarks([]);
+        setTrackingMessage(isWeb ? 'กดเปิดกล้องเพื่อเริ่ม' : 'กดเปิดกล้องเพื่อเริ่ม');
+    };
+
+    // =====================================================
+    // TIMER
+    // =====================================================
+
+    useEffect(() => {
+        if (!timerRunning) {
+            return;
+        }
+
+        timerRef.current = setInterval(() => {
+            setRemainingSeconds(prev => {
+                if (prev <= 1) {
+                    if (timerRef.current) {
+                        clearInterval(timerRef.current);
+                        timerRef.current = null;
                     }
-                >
+
+                    timerRunningRef.current = false;
+                    setTimerRunning(false);
+                    handleStopCamera();
+                    setTrackingMessage('ยืดครบเวลาแล้ว ✓');
+                    router.replace('/complete' as any);
+                    return 0;
+                }
+
+                return prev - 1;
+            });
+        }, 1000);
+
+        return () => {
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+            }
+        };
+    }, [timerRunning]);
+
+    // =====================================================
+    // RESET
+    // =====================================================
+
+    const handleReset = () => {
+        if (timerRef.current) {
+            clearInterval(timerRef.current);
+            timerRef.current = null;
+        }
+
+        if (poseStartTimeoutRef.current) {
+            clearTimeout(poseStartTimeoutRef.current);
+            poseStartTimeoutRef.current = null;
+        }
+
+        timerRunningRef.current = false;
+        setTimerRunning(false);
+        setRemainingSeconds(exerciseTime);
+        setPoseDetected(false);
+        setPoseLandmarks([]);
+
+        if (cameraRunning && isWeb) {
+            setTrackingMessage('กำลังค้นหาตำแหน่งร่างกาย...');
+        } else {
+            setTrackingMessage('พร้อมเริ่ม');
+        }
+    };
+
+    // =====================================================
+    // TOGGLE CAMERA
+    // =====================================================
+
+    const handleToggleCamera = () => {
+        if (cameraRunning) {
+            handleStopCamera();
+        } else {
+            handleStartCamera();
+        }
+    };
+
+    // =====================================================
+    // FLIP CAMERA
+    // =====================================================
+
+    const handleFlipCamera = async () => {
+        const nextType = cameraType === 'front' ? 'back' : 'front';
+        setCameraType(nextType);
+
+        if (isWeb && cameraRunning) {
+            handleStopCamera();
+            setTimeout(() => {
+                handleStartCamera();
+            }, 150);
+        }
+    };
+
+    // =====================================================
+    // SKIP / BACK
+    // =====================================================
+
+    const cleanupAndBack = () => {
+        handleStopCamera();
+        router.back();
+    };
+
+    const handleBack = () => {
+        handleStopCamera();
+        router.replace('/exercise' as any);
+    };
+
+    // =====================================================
+    // AUTO START NATIVE CAMERA ONLY
+    // Web uses a real button press so getUserMedia always has
+    // a clear browser user gesture.
+    // =====================================================
+
+    useEffect(() => {
+        if (!isWeb && !loadingExercise && !cameraRunning && permission?.granted) {
+            handleStartCamera();
+        }
+    }, [loadingExercise, permission?.granted]);
+
+    // =====================================================
+    // GLOBAL CLEANUP
+    // =====================================================
+
+    useEffect(() => {
+        return () => {
+            if (timerRef.current) {
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+            }
+
+            if (poseStartTimeoutRef.current) {
+                clearTimeout(poseStartTimeoutRef.current);
+                poseStartTimeoutRef.current = null;
+            }
+
+            stopPoseLoop();
+
+            if (webStreamRef.current) {
+                webStreamRef.current.getTracks().forEach(track => track.stop());
+                webStreamRef.current = null;
+            }
+
+            if (webVideoRef.current) {
+                webVideoRef.current.pause();
+                webVideoRef.current.srcObject = null;
+            }
+
+            poseLandmarkerRef.current?.close?.();
+            poseLandmarkerRef.current = null;
+        };
+    }, []);
+
+    // =====================================================
+    // LOADING
+    // =====================================================
+
+    if (loadingExercise) {
+        return (
+            <View style={styles.permissionContainer}>
+                <ActivityIndicator size="large" color="#ffffff" />
+                <Text style={styles.permissionText}>
                     กำลังเตรียมท่ายืด...
                 </Text>
-
             </View>
-
         );
-
     }
 
+    // =====================================================
+    // NATIVE PERMISSION
+    // =====================================================
 
-    // =================================================
-    // CAMERA PERMISSION LOADING
-    // =================================================
-
-    if (!permission) {
-
+    if (!isWeb && !permission) {
         return (
-
-            <View
-                style={
-                    styles.permissionContainer
-                }
-            >
-
-                <ActivityIndicator
-                    size="large"
-                    color="#ffffff"
-                />
-
-
-                <Text
-                    style={
-                        styles.permissionText
-                    }
-                >
+            <View style={styles.permissionContainer}>
+                <ActivityIndicator size="large" color="#ffffff" />
+                <Text style={styles.permissionText}>
                     กำลังตรวจสอบสิทธิ์กล้อง...
                 </Text>
-
             </View>
-
         );
-
     }
 
-
-    // =================================================
-    // CAMERA PERMISSION DENIED
-    // =================================================
-
-    if (
-        !permission.granted
-    ) {
-
+    if (!isWeb && !permission?.granted) {
         return (
-
-            <View
-                style={
-                    styles.permissionContainer
-                }
-            >
-
-                <View
-                    style={
-                        styles.permissionIcon
-                    }
-                >
-
-                    <FontAwesome6
-                        name="camera"
-                        size={36}
-                        color="#ffffff"
-                    />
-
+            <View style={styles.permissionContainer}>
+                <View style={styles.permissionIcon}>
+                    <FontAwesome6 name="camera" size={36} color="#ffffff" />
                 </View>
 
+                <Text style={styles.permissionTitle}>ต้องการใช้กล้อง</Text>
 
-                <Text
-                    style={
-                        styles.permissionTitle
-                    }
-                >
-                    ต้องการใช้กล้อง
+                <Text style={styles.permissionDescription}>
+                    Stretchman ต้องใช้กล้องเพื่อช่วยตรวจสอบท่าทางขณะยืดกล้ามเนื้อ
                 </Text>
-
-
-                <Text
-                    style={
-                        styles.permissionDescription
-                    }
-                >
-                    Stretchman ต้องใช้กล้อง
-                    เพื่อช่วยตรวจสอบท่าทาง
-                    ขณะยืดกล้ามเนื้อ
-                </Text>
-
 
                 <TouchableOpacity
-                    style={
-                        styles.permissionButton
-                    }
-                    onPress={
-                        requestPermission
-                    }
+                    style={styles.permissionButton}
+                    onPress={requestPermission}
                 >
-
-                    <Text
-                        style={
-                            styles.permissionButtonText
-                        }
-                    >
+                    <Text style={styles.permissionButtonText}>
                         อนุญาตให้ใช้กล้อง
                     </Text>
-
                 </TouchableOpacity>
-
 
                 <TouchableOpacity
-                    style={
-                        styles.permissionBackButton
-                    }
-                    onPress={
-                        handleBack
-                    }
+                    style={styles.permissionBackButton}
+                    onPress={handleBack}
                 >
-
-                    <Text
-                        style={
-                            styles.permissionBackText
-                        }
-                    >
-                        กลับ
-                    </Text>
-
+                    <Text style={styles.permissionBackText}>กลับ</Text>
                 </TouchableOpacity>
-
             </View>
-
         );
-
     }
 
+    // =====================================================
+    // WEB VIDEO ELEMENT
+    // =====================================================
 
-    // =================================================
+    const webVideo = isWeb
+        ? React.createElement('video', {
+              ref: (node: HTMLVideoElement | null) => {
+                  webVideoRef.current = node;
+              },
+              autoPlay: true,
+              muted: true,
+              playsInline: true,
+              style: {
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  transform: 'scaleX(-1)',
+                  backgroundColor: '#0B237A',
+                  opacity: 1,
+              } as any,
+          })
+        : null;
+
+
+    // =====================================================
+    // IMPORTANT POSE LANDMARKS
+    // =====================================================
+
+    const visibleLandmarks = [
+        0, 11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28,
+    ];
+
+    // =====================================================
     // MAIN
-    // =================================================
+    // =====================================================
 
     return (
+        <View style={styles.container}>
+            <View style={styles.cameraArea}>
+                {isWeb ? (
+                    <>
+                        {webVideo}
 
-        <View
-            style={
-                styles.container
-            }
-        >
+                        {!cameraRunning && (
+                            <View style={styles.cameraPlaceholder}>
+                                <FontAwesome6
+                                    name="camera"
+                                    size={45}
+                                    color="rgba(255,255,255,0.7)"
+                                />
+                                <Text style={styles.cameraPlaceholderText}>
+                                    กดเปิดกล้องเพื่อเริ่ม
+                                </Text>
+                            </View>
+                        )}
 
+                        {cameraRunning && (
+                            <View
+                                pointerEvents="none"
+                                style={StyleSheet.absoluteFill}
+                            >
+                                {poseLandmarks.length > 0 &&
+                                    visibleLandmarks.map(index => {
+                                        const point = poseLandmarks[index];
+                                        if (!point) return null;
 
-            {/* =================================================
-                CAMERA
-            ================================================= */}
+                                        const visibility = point.visibility ?? 1;
+                                        if (visibility < 0.35) return null;
 
-            <View
-                style={
-                    styles.cameraArea
-                }
-            >
-
-                {cameraRunning ? (
-
+                                        return (
+                                            <View
+                                                key={index}
+                                                style={[
+                                                    styles.aiJoint,
+                                                    {
+                                                        left: `${(1 - point.x) * 100}%`,
+                                                        top: `${point.y * 100}%`,
+                                                        opacity: poseDetected ? 1 : 0.45,
+                                                    },
+                                                ]}
+                                            />
+                                        );
+                                    })}
+                            </View>
+                        )}
+                    </>
+                ) : cameraRunning ? (
                     <CameraView
-                        style={
-                            StyleSheet.absoluteFill
-                        }
-                        facing={
-                            cameraType
-                        }
+                        style={StyleSheet.absoluteFill}
+                        facing={cameraType}
                     />
-
                 ) : (
-
-                    <View
-                        style={
-                            styles.cameraPlaceholder
-                        }
-                    >
-
+                    <View style={styles.cameraPlaceholder}>
                         <FontAwesome6
                             name="camera"
                             size={45}
                             color="rgba(255,255,255,0.7)"
                         />
-
-
-                        <Text
-                            style={
-                                styles.cameraPlaceholderText
-                            }
-                        >
+                        <Text style={styles.cameraPlaceholderText}>
                             กดเปิดกล้องเพื่อเริ่ม
                         </Text>
-
                     </View>
-
                 )}
 
-
-                {/* =================================================
-                    TOP BAR
-                ================================================= */}
-
-                <View
-                    style={
-                        styles.topBar
-                    }
-                >
-
+                {/* TOP BAR */}
+                <View style={styles.topBar}>
                     <TouchableOpacity
-                        style={
-                            styles.backButton
-                        }
-                        onPress={
-                            handleBack
-                        }
+                        style={styles.backButton}
+                        onPress={handleBack}
                     >
-
                         <FontAwesome6
                             name="arrow-left"
                             size={18}
                             color="#2148C0"
                         />
-
                     </TouchableOpacity>
 
-
-                    <View
-                        style={
-                            styles.titleArea
-                        }
-                    >
-
+                    <View style={styles.titleArea}>
                         <Text
-                            style={
-                                styles.exerciseTitle
-                            }
-                            numberOfLines={
-                                1
-                            }
+                            style={styles.exerciseTitle}
+                            numberOfLines={1}
                         >
                             {exerciseName}
                         </Text>
 
-
-                        <Text
-                            style={
-                                styles.exerciseSubtitle
-                            }
-                        >
+                        <Text style={styles.exerciseSubtitle}>
                             Motion Tracking
                         </Text>
-
                     </View>
-
 
                     <View
                         style={[
                             styles.aiStatus,
-
-                            cameraRunning &&
-                            styles.aiStatusReady,
+                            aiReady && styles.aiStatusReady,
                         ]}
                     >
-
                         <View
                             style={[
                                 styles.statusDot,
-
-                                cameraRunning &&
-                                styles.statusDotReady,
+                                aiReady && styles.statusDotReady,
                             ]}
                         />
-
-
-                        <Text
-                            style={
-                                styles.aiText
-                            }
-                        >
-                            AI
-                        </Text>
-
+                        <Text style={styles.aiText}>AI</Text>
                     </View>
-
                 </View>
 
-
-                {/* =================================================
-                    EXERCISE INFO
-                ================================================= */}
-
-                <View
-                    style={
-                        styles.exerciseInfoCard
-                    }
-                >
-
-                    <View
-                        style={
-                            styles.exerciseInfoIcon
-                        }
-                    >
-
+                {/* EXERCISE INFO */}
+                <View style={styles.exerciseInfoCard}>
+                    <View style={styles.exerciseInfoIcon}>
                         <FontAwesome6
                             name="person-running"
                             size={17}
                             color="#237FFF"
                         />
-
                     </View>
 
-
-                    <View
-                        style={
-                            styles.exerciseInfoContent
-                        }
-                    >
-
-                        <Text
-                            style={
-                                styles.exerciseInfoTitle
-                            }
-                        >
+                    <View style={styles.exerciseInfoContent}>
+                        <Text style={styles.exerciseInfoTitle}>
                             ท่าที่กำลังทำ
                         </Text>
-
-
                         <Text
-                            style={
-                                styles.exerciseInfoName
-                            }
-                            numberOfLines={
-                                1
-                            }
+                            style={styles.exerciseInfoName}
+                            numberOfLines={1}
                         >
                             {exerciseName}
                         </Text>
-
                     </View>
-
                 </View>
 
-
-                {/* =================================================
-                    SKELETON
-                ================================================= */}
-
+                {/* TRACKING STATUS */}
                 <View
-                    style={
-                        styles.trackingArea
-                    }
+                    pointerEvents="none"
+                    style={styles.trackingBadge}
                 >
-
-                    {cameraRunning && (
-
-                        <View
-                            style={
-                                styles.skeletonCircle
-                            }
-                        >
-
-                            <FontAwesome6
-                                name="person"
-                                size={110}
-                                color="rgba(255,255,255,0.18)"
-                            />
-
-
-                            <View
-                                style={[
-                                    styles.joint,
-                                    styles.jointHead,
-                                ]}
-                            />
-
-
-                            <View
-                                style={[
-                                    styles.joint,
-                                    styles.jointLeftShoulder,
-                                ]}
-                            />
-
-
-                            <View
-                                style={[
-                                    styles.joint,
-                                    styles.jointRightShoulder,
-                                ]}
-                            />
-
-
-                            <View
-                                style={[
-                                    styles.joint,
-                                    styles.jointLeftHip,
-                                ]}
-                            />
-
-
-                            <View
-                                style={[
-                                    styles.joint,
-                                    styles.jointRightHip,
-                                ]}
-                            />
-
-                        </View>
-
-                    )}
-
-                </View>
-
-
-                {/* =================================================
-                    TRACKING MESSAGE
-                ================================================= */}
-
-                <View
-                    style={
-                        styles.trackingMessage
-                    }
-                >
-
                     <FontAwesome6
-                        name={
-                            cameraRunning
-                                ? 'person'
-                                : 'circle-info'
-                        }
+                        name={poseDetected ? 'person-circle-check' : 'person'}
                         size={15}
                         color="#ffffff"
                     />
-
-
-                    <Text
-                        style={
-                            styles.trackingMessageText
-                        }
-                    >
+                    <Text style={styles.trackingBadgeText}>
                         {trackingMessage}
                     </Text>
-
                 </View>
 
-
-                {/* =================================================
-                    TIMER
-                ================================================= */}
-
-                <View
-                    style={
-                        styles.timerBox
-                    }
-                >
-
-                    <Text
-                        style={
-                            styles.timerNumber
-                        }
-                    >
+                {/* TIMER */}
+                <View style={styles.timerBox}>
+                    <Text style={styles.timerNumber}>
                         {remainingSeconds}
                     </Text>
-
-
-                    <Text
-                        style={
-                            styles.timerUnit
-                        }
-                    >
-                        วินาที
-                    </Text>
-
+                    <Text style={styles.timerUnit}>วินาที</Text>
                 </View>
-
             </View>
 
-
-            {/* =================================================
-                CONTROLS
-            ================================================= */}
-
-            <View
-                style={
-                    styles.controls
-                }
-            >
-
-                {/* RESET */}
-
+            {/* CONTROLS */}
+            <View style={styles.controls}>
                 <TouchableOpacity
-                    style={
-                        styles.controlButton
-                    }
-                    onPress={
-                        handleReset
-                    }
+                    style={styles.controlButton}
+                    onPress={handleReset}
                 >
-
                     <FontAwesome6
                         name="rotate-left"
                         size={19}
                         color="#ffffff"
                     />
-
                 </TouchableOpacity>
 
-
-                {/* START / STOP */}
-
                 <TouchableOpacity
-                    style={
-                        styles.startButton
-                    }
-                    onPress={
-                        handleToggleCamera
-                    }
+                    style={styles.startButton}
+                    onPress={handleToggleCamera}
                 >
-
                     <FontAwesome6
-                        name={
-                            cameraRunning
-                                ? 'pause'
-                                : 'camera'
-                        }
+                        name={cameraRunning ? 'pause' : 'camera'}
                         size={18}
                         color="#ffffff"
                     />
-
-
-                    <Text
-                        style={
-                            styles.startButtonText
-                        }
-                    >
-                        {cameraRunning
-                            ? 'หยุด'
-                            : 'เปิดกล้อง'}
+                    <Text style={styles.startButtonText}>
+                        {cameraRunning ? 'หยุด' : 'เปิดกล้อง'}
                     </Text>
-
                 </TouchableOpacity>
 
-
-                {/* FLIP */}
-
                 <TouchableOpacity
-                    style={
-                        styles.controlButton
-                    }
-                    onPress={
-                        handleFlipCamera
-                    }
+                    style={styles.controlButton}
+                    onPress={handleFlipCamera}
                 >
-
                     <FontAwesome6
                         name="camera-rotate"
                         size={19}
                         color="#ffffff"
                     />
-
                 </TouchableOpacity>
-
             </View>
 
-
-            {/* =================================================
-                SKIP
-            ================================================= */}
-
+            {/* SKIP */}
             <TouchableOpacity
-                style={
-                    styles.skipButton
-                }
-                onPress={
-                    handleSkip
-                }
+                style={styles.skipButton}
+                onPress={cleanupAndBack}
             >
-
-                <Text
-                    style={
-                        styles.skipText
-                    }
-                >
-                    ข้ามท่านี้
-                </Text>
-
-
+                <Text style={styles.skipText}>ข้ามท่านี้</Text>
                 <FontAwesome6
                     name="forward"
                     size={14}
                     color="#ffffff"
                 />
-
             </TouchableOpacity>
 
-
-            {/* =================================================
-                BOTTOM NAV
-            ================================================= */}
-
-            <BottomNav
-                activeTab="home"
-            />
-
+            {/* BOTTOM NAV */}
+            <BottomNav activeTab="home" />
         </View>
-
     );
-
 }
-
 
 // =====================================================
 // STYLES
 // =====================================================
 
 const styles = StyleSheet.create({
-
-    // =================================================
-    // MAIN
-    // =================================================
-
     container: {
         flex: 1,
-
         backgroundColor: '#1638AE',
-
         paddingHorizontal: 20,
-
         paddingTop: 10,
-
         paddingBottom: 15,
     },
 
-
-    // =================================================
-    // PERMISSION
-    // =================================================
-
     permissionContainer: {
         flex: 1,
-
         backgroundColor: '#1638AE',
-
         justifyContent: 'center',
-
         alignItems: 'center',
-
         paddingHorizontal: 30,
     },
 
     permissionIcon: {
         width: 80,
         height: 80,
-
         borderRadius: 40,
-
-        backgroundColor:
-            'rgba(255,255,255,0.12)',
-
+        backgroundColor: 'rgba(255,255,255,0.12)',
         justifyContent: 'center',
-
         alignItems: 'center',
-
         marginBottom: 20,
     },
 
     permissionTitle: {
         color: '#ffffff',
-
         fontSize: 24,
-
         fontWeight: 'bold',
-
         marginBottom: 10,
     },
 
     permissionDescription: {
-        color:
-            'rgba(255,255,255,0.75)',
-
+        color: 'rgba(255,255,255,0.75)',
         fontSize: 14,
-
         textAlign: 'center',
-
         lineHeight: 22,
-
         marginBottom: 25,
     },
 
     permissionText: {
         color: '#ffffff',
-
         marginTop: 15,
-
         fontSize: 15,
     },
 
     permissionButton: {
         width: '100%',
-
         height: 52,
-
         borderRadius: 26,
-
         backgroundColor: '#237FFF',
-
         justifyContent: 'center',
-
         alignItems: 'center',
     },
 
     permissionButtonText: {
         color: '#ffffff',
-
         fontSize: 16,
-
         fontWeight: 'bold',
     },
 
     permissionBackButton: {
         marginTop: 15,
-
         padding: 10,
     },
 
     permissionBackText: {
-        color:
-            'rgba(255,255,255,0.7)',
-
+        color: 'rgba(255,255,255,0.7)',
         fontSize: 14,
     },
 
-
-    // =================================================
-    // CAMERA
-    // =================================================
-
     cameraArea: {
         flex: 1,
-
         borderRadius: 25,
-
         overflow: 'hidden',
-
         backgroundColor: '#0B237A',
-
         position: 'relative',
-
         marginBottom: 12,
     },
 
     cameraPlaceholder: {
         position: 'absolute',
-
         top: 0,
-
         left: 0,
-
         right: 0,
-
         bottom: 0,
-
         justifyContent: 'center',
-
         alignItems: 'center',
-
         backgroundColor: '#0B237A',
     },
 
     cameraPlaceholderText: {
         color: '#ffffff',
-
         fontSize: 18,
-
         fontWeight: 'bold',
-
         marginTop: 15,
+        textAlign: 'center',
+        paddingHorizontal: 20,
     },
-
-
-    // =================================================
-    // TOP BAR
-    // =================================================
 
     topBar: {
         position: 'absolute',
-
         top: 15,
-
         left: 15,
-
         right: 15,
-
         flexDirection: 'row',
-
         alignItems: 'center',
-
         zIndex: 10,
-
         elevation: 10,
     },
 
     backButton: {
         width: 44,
         height: 44,
-
         borderRadius: 22,
-
         backgroundColor: '#ffffff',
-
         justifyContent: 'center',
-
         alignItems: 'center',
     },
 
     titleArea: {
         flex: 1,
-
         marginLeft: 12,
-
         marginRight: 10,
     },
 
     exerciseTitle: {
         color: '#ffffff',
-
         fontSize: 17,
-
         fontWeight: 'bold',
     },
 
     exerciseSubtitle: {
-        color:
-            'rgba(255,255,255,0.7)',
-
+        color: 'rgba(255,255,255,0.7)',
         fontSize: 12,
-
         marginTop: 2,
     },
 
-
-    // =================================================
-    // AI
-    // =================================================
-
     aiStatus: {
         height: 32,
-
         paddingHorizontal: 11,
-
         borderRadius: 16,
-
-        backgroundColor:
-            'rgba(0,0,0,0.35)',
-
+        backgroundColor: 'rgba(0,0,0,0.35)',
         flexDirection: 'row',
-
         alignItems: 'center',
-
         gap: 6,
     },
 
     aiStatusReady: {
-        backgroundColor:
-            'rgba(35,127,255,0.8)',
+        backgroundColor: 'rgba(35,127,255,0.8)',
     },
 
     statusDot: {
         width: 7,
-
         height: 7,
-
         borderRadius: 4,
-
         backgroundColor: '#999999',
     },
 
@@ -1718,52 +1136,30 @@ const styles = StyleSheet.create({
 
     aiText: {
         color: '#ffffff',
-
         fontSize: 11,
-
         fontWeight: 'bold',
     },
 
-
-    // =================================================
-    // EXERCISE INFO
-    // =================================================
-
     exerciseInfoCard: {
         position: 'absolute',
-
         top: 72,
-
         left: 15,
-
         right: 15,
-
         zIndex: 8,
-
-        backgroundColor:
-            'rgba(255,255,255,0.94)',
-
+        backgroundColor: 'rgba(255,255,255,0.94)',
         borderRadius: 16,
-
         padding: 9,
-
         flexDirection: 'row',
-
         alignItems: 'center',
     },
 
     exerciseInfoIcon: {
         width: 36,
         height: 36,
-
         borderRadius: 12,
-
         backgroundColor: '#EEF5FF',
-
         alignItems: 'center',
-
         justifyContent: 'center',
-
         marginRight: 9,
     },
 
@@ -1773,280 +1169,128 @@ const styles = StyleSheet.create({
 
     exerciseInfoTitle: {
         color: '#64748b',
-
         fontSize: 9,
-
         fontWeight: '700',
     },
 
     exerciseInfoName: {
         color: '#1638AE',
-
         fontSize: 12,
-
         fontWeight: '800',
-
         marginTop: 2,
     },
 
-
-    // =================================================
-    // TRACKING
-    // =================================================
-
-    trackingArea: {
-        flex: 1,
-
-        justifyContent: 'center',
-
-        alignItems: 'center',
-    },
-
-    skeletonCircle: {
-        width: 220,
-        height: 220,
-
-        borderRadius: 110,
-
-        borderWidth: 2,
-
-        borderColor:
-            'rgba(255,255,255,0.35)',
-
-        justifyContent: 'center',
-
-        alignItems: 'center',
-    },
-
-    joint: {
+    aiJoint: {
         position: 'absolute',
-
-        width: 12,
-        height: 12,
-
-        borderRadius: 6,
-
+        width: 14,
+        height: 14,
+        marginLeft: -7,
+        marginTop: -7,
+        borderRadius: 7,
         backgroundColor: '#43a5ff',
-
         borderWidth: 2,
-
         borderColor: '#ffffff',
     },
 
-    jointHead: {
-        top: 45,
-
-        left: 104,
-    },
-
-    jointLeftShoulder: {
-        top: 80,
-
-        left: 60,
-    },
-
-    jointRightShoulder: {
-        top: 80,
-
-        right: 60,
-    },
-
-    jointLeftHip: {
-        bottom: 55,
-
-        left: 75,
-    },
-
-    jointRightHip: {
-        bottom: 55,
-
-        right: 75,
-    },
-
-
-    // =================================================
-    // TRACKING MESSAGE
-    // =================================================
-
-    trackingMessage: {
+    trackingBadge: {
         position: 'absolute',
-
-        bottom: 75,
-
+        bottom: 88,
         left: 20,
-
         right: 20,
-
         minHeight: 42,
-
         borderRadius: 21,
-
-        backgroundColor:
-            'rgba(0,0,0,0.55)',
-
+        backgroundColor: 'rgba(0,0,0,0.55)',
         flexDirection: 'row',
-
         alignItems: 'center',
-
         justifyContent: 'center',
-
         gap: 8,
-
         paddingHorizontal: 15,
     },
 
-    trackingMessageText: {
+    trackingBadgeText: {
         color: '#ffffff',
-
         fontSize: 13,
-
         fontWeight: '500',
-
         textAlign: 'center',
     },
 
-
-    // =================================================
-    // TIMER
-    // =================================================
-
     timerBox: {
         position: 'absolute',
-
         bottom: 15,
-
         alignSelf: 'center',
-
         width: 90,
-
         height: 65,
-
         borderRadius: 18,
-
-        backgroundColor:
-            'rgba(0,0,0,0.55)',
-
+        backgroundColor: 'rgba(0,0,0,0.55)',
         justifyContent: 'center',
-
         alignItems: 'center',
     },
 
     timerNumber: {
         color: '#ffffff',
-
         fontSize: 27,
-
         fontWeight: 'bold',
-
         lineHeight: 30,
     },
 
     timerUnit: {
-        color:
-            'rgba(255,255,255,0.7)',
-
+        color: 'rgba(255,255,255,0.7)',
         fontSize: 10,
     },
 
-
-    // =================================================
-    // CONTROLS
-    // =================================================
-
     controls: {
         flexDirection: 'row',
-
         alignItems: 'center',
-
         justifyContent: 'center',
-
         gap: 15,
-
         marginBottom: 10,
     },
 
     controlButton: {
         width: 52,
         height: 52,
-
         borderRadius: 26,
-
-        backgroundColor:
-            'rgba(255,255,255,0.14)',
-
+        backgroundColor: 'rgba(255,255,255,0.14)',
         justifyContent: 'center',
-
         alignItems: 'center',
-
         borderWidth: 1,
-
-        borderColor:
-            'rgba(255,255,255,0.15)',
+        borderColor: 'rgba(255,255,255,0.15)',
     },
 
     startButton: {
         height: 52,
-
         minWidth: 145,
-
         borderRadius: 26,
-
         backgroundColor: '#237FFF',
-
         flexDirection: 'row',
-
         justifyContent: 'center',
-
         alignItems: 'center',
-
         gap: 9,
     },
 
     startButtonText: {
         color: '#ffffff',
-
         fontSize: 15,
-
         fontWeight: 'bold',
     },
 
-
-    // =================================================
-    // SKIP
-    // =================================================
-
     skipButton: {
         width: '100%',
-
         height: 48,
-
         borderRadius: 24,
-
-        backgroundColor:
-            'rgba(255,255,255,0.15)',
-
+        backgroundColor: 'rgba(255,255,255,0.15)',
         flexDirection: 'row',
-
         alignItems: 'center',
-
         justifyContent: 'center',
-
         gap: 8,
-
         borderWidth: 1,
-
-        borderColor:
-            'rgba(255,255,255,0.2)',
-
+        borderColor: 'rgba(255,255,255,0.2)',
         marginBottom: 5,
     },
 
     skipText: {
         color: '#ffffff',
-
         fontSize: 15,
-
         fontWeight: 'bold',
     },
-
 });
