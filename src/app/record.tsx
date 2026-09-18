@@ -1101,14 +1101,8 @@ export default function RecordScreen() {
 
                 </View>
 
-                <View
-                    style={
-                        styles.fixedBottomNav
-                    }
-                >
-                    <BottomNav
-                        activeTab="home"
-                    />
+                <View style={styles.fixedBottomNav}>
+                    <BottomNav activeTab="home" />
                 </View>
 
             </View>
@@ -1176,7 +1170,7 @@ export default function RecordScreen() {
         >
 
             <ScrollView
-
+                style={styles.mainScroll}
                 showsVerticalScrollIndicator={
                     false
                 }
@@ -2184,14 +2178,8 @@ export default function RecordScreen() {
 
             </ScrollView>
 
-            <View
-                style={
-                    styles.fixedBottomNav
-                }
-            >
-                <BottomNav
-                    activeTab="home"
-                />
+            <View style={styles.fixedBottomNav}>
+                <BottomNav activeTab="home" />
             </View>
 
         </View>
@@ -2217,6 +2205,11 @@ const styles = StyleSheet.create({
         backgroundColor: '#1638AE',
 
         paddingHorizontal: 20,
+    },
+
+    mainScroll: {
+        flex: 1,
+        minHeight: 0,
     },
 
     scrollContent: {
@@ -3123,22 +3116,17 @@ const styles = StyleSheet.create({
 
 
     // =================================================
-    // FIXED BOTTOM NAV
+    // BOTTOM NAV — FLOATING LIKE PAIN
     // =================================================
 
     fixedBottomNav: {
         position: 'absolute',
-
-        left: 20,
-
-        right: 20,
-
-        bottom: 0,
-
+        left: 0,
+        right: 0,
+        bottom: 5,
         zIndex: 100,
-
         elevation: 20,
-
+        paddingHorizontal: 20,
         paddingBottom: 10,
     },
 

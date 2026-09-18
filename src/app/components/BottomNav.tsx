@@ -9,17 +9,15 @@ import {
 import { FontAwesome6 } from '@expo/vector-icons';
 import { router } from 'expo-router';
 
-
 interface BottomNavProps {
     activeTab?:
         | 'home'
         | 'quest'
         | 'alarm'
-        | 'shop'
+        | 'leaderboard'
         | 'user'
         | 'setting';
 }
-
 
 export default function BottomNav({
     activeTab = 'home',
@@ -170,14 +168,14 @@ export default function BottomNav({
 
 
             {/* ==================================================
-                SHOP
+                LEADERBOARD (แทนที่ SHOP)
             ================================================== */}
 
             <TouchableOpacity
                 style={styles.navItem}
                 onPress={() =>
                     router.push(
-                        '/shop' as any
+                        '/leaderboard' as any // ตรวจสอบให้แน่ใจว่า path นี้ตรงกับไฟล์ของคุณ
                     )
                 }
                 activeOpacity={0.7}
@@ -186,16 +184,16 @@ export default function BottomNav({
                 <View
                     style={[
                         styles.navItemContent,
-                        activeTab === 'shop' &&
+                        activeTab === 'leaderboard' &&
                             styles.navItemContentActive,
                     ]}
                 >
 
                     <FontAwesome6
-                        name="cart-shopping"
+                        name="ranking-star" // ไอคอนสื่อถึงการจัดอันดับ/โพเดียม
                         size={16}
                         color={
-                            activeTab === 'shop'
+                            activeTab === 'leaderboard'
                                 ? '#2475ed'
                                 : '#888'
                         }
@@ -203,12 +201,14 @@ export default function BottomNav({
 
                     <Text
                         style={
-                            activeTab === 'shop'
+                            activeTab === 'leaderboard'
                                 ? styles.navTextActive
                                 : styles.navText
                         }
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
                     >
-                        Shop
+                        Leaderboard
                     </Text>
 
                 </View>
@@ -275,7 +275,6 @@ export default function BottomNav({
     );
 }
 
-
 // ======================================================
 // STYLES
 // ======================================================
@@ -308,40 +307,28 @@ const styles = StyleSheet.create({
         elevation: 5,
     },
 
-
     // ช่องของแต่ละเมนู
-    // ทุกช่องมีขนาดเท่ากัน
     navItem: {
         width: '20%',
-
         height: 64,
-
         alignItems: 'center',
         justifyContent: 'center',
     },
-
 
     // เนื้อหาด้านใน
     navItemContent: {
         minWidth: 58,
         height: 44,
-
         paddingHorizontal: 10,
-
         borderRadius: 22,
-
         alignItems: 'center',
         justifyContent: 'center',
     },
 
-
     // Active
-    // เปลี่ยนเฉพาะ View นี้
-    // ไม่ไปเปลี่ยนขนาดของ navItem
     navItemContentActive: {
         backgroundColor: '#E3EEFF',
     },
-
 
     // Text ปกติ
     navText: {
@@ -350,7 +337,6 @@ const styles = StyleSheet.create({
         marginTop: 3,
         fontWeight: '400',
     },
-
 
     // Text Active
     navTextActive: {

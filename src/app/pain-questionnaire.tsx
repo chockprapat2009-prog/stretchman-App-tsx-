@@ -1,4 +1,4 @@
-import React, {
+import {
     useEffect,
     useRef,
     useState,
@@ -16,8 +16,8 @@ import {
 } from 'react-native';
 
 import { FontAwesome6 } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 
 import BottomNav from './components/BottomNav';
@@ -3605,21 +3605,14 @@ const styles = StyleSheet.create({
     // =================================================
 
     fixedBottomNav: {
-        position: 'absolute',
-
-        left: 0,
-
-        right: 0,
-
-        bottom: 0,
-
-        zIndex: 100,
-
-        elevation: 20,
-
-        paddingHorizontal: 20,
-
-        paddingBottom: 10,
-    },
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 15,
+    zIndex: 100,
+    elevation: 20,
+    paddingHorizontal: 0,
+    paddingBottom: 0,
+},
 
 });

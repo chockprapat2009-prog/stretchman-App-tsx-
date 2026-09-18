@@ -6,7 +6,6 @@ import { useRouter } from 'expo-router';
 export default function CompleteScreen() {
   const router = useRouter();
 
-  // ตัวอย่างข้อมูลรางวัล (สามารถดึงมาจาก State หรือ AsyncStorage ตามระบบของคุณ)
   const rewardData = {
     xp: 50,
     coins: 20,
@@ -19,8 +18,6 @@ export default function CompleteScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      
-      {/* ================= HEADER ================= */}
       <View style={styles.header}>
         <View style={styles.successIcon}>
           <FontAwesome6 name="check" size={38} color="#fff" />
@@ -29,7 +26,6 @@ export default function CompleteScreen() {
         <Text style={styles.subtitle}>คุณทำท่ายืดเสร็จแล้ว</Text>
       </View>
 
-      {/* ================= EXERCISE ================= */}
       <View style={styles.exerciseCard}>
         <View style={styles.exerciseIcon}>
           <FontAwesome6 name="person-running" size={25} color="#43a5ff" />
@@ -40,12 +36,9 @@ export default function CompleteScreen() {
         </View>
       </View>
 
-      {/* ================= REWARD ================= */}
       <View style={styles.rewardSection}>
         <Text style={styles.sectionTitle}>รางวัลที่ได้รับ</Text>
         <View style={styles.rewardGrid}>
-          
-          {/* XP */}
           <View style={[styles.rewardCard, styles.xpCard]}>
             <View style={[styles.rewardIcon, styles.xpIcon]}>
               <FontAwesome6 name="star" size={20} color="#f0ae00" />
@@ -54,7 +47,6 @@ export default function CompleteScreen() {
             <Text style={[styles.rewardValue, styles.xpValue]}>+{rewardData.xp}</Text>
           </View>
 
-          {/* COINS */}
           <View style={[styles.rewardCard, styles.coinCard]}>
             <View style={[styles.rewardIcon, styles.coinIcon]}>
               <FontAwesome6 name="coins" size={20} color="#d99a00" />
@@ -63,7 +55,6 @@ export default function CompleteScreen() {
             <Text style={[styles.rewardValue, styles.coinValue]}>+{rewardData.coins}</Text>
           </View>
 
-          {/* STREAK */}
           <View style={[styles.rewardCard, styles.streakCard]}>
             <View style={[styles.rewardIcon, styles.streakIconCard]}>
               <FontAwesome6 name="fire" size={20} color="#f06445" />
@@ -73,29 +64,24 @@ export default function CompleteScreen() {
               {rewardData.streak} <Text style={styles.streakUnit}>วัน</Text>
             </Text>
           </View>
-
         </View>
       </View>
 
-      {/* ================= TOTAL ================= */}
       <View style={styles.totalSection}>
         <View style={styles.totalItem}>
           <Text style={styles.totalItemLabel}>XP ทั้งหมด</Text>
           <Text style={styles.totalItemValue}>{rewardData.totalXP} XP</Text>
         </View>
-
         <View style={styles.totalItem}>
           <Text style={styles.totalItemLabel}>Coins ทั้งหมด</Text>
           <Text style={styles.totalItemValue}>{rewardData.totalCoins}</Text>
         </View>
-
         <View style={[styles.totalItem, { borderBottomWidth: 0 }]}>
           <Text style={styles.totalItemLabel}>Level</Text>
           <Text style={styles.totalItemValue}>Lv.{rewardData.level}</Text>
         </View>
       </View>
 
-      {/* ================= STREAK MESSAGE ================= */}
       <View style={styles.streakMessage}>
         <Text style={styles.streakMessageEmoji}>🔥</Text>
         <View style={{ flex: 1 }}>
@@ -104,30 +90,29 @@ export default function CompleteScreen() {
         </View>
       </View>
 
-      {/* ================= BUTTONS ================= */}
       <View style={styles.completeActions}>
-        <TouchableOpacity 
-          style={styles.primaryButton} 
-          onPress={() => router.replace('/HomeScreen')}
+        {/* แบบสอบถามอาการหลังยืด */}
+        <TouchableOpacity
+          style={styles.primaryButton}
+          onPress={() => router.replace('/post-stretch' as any)}
         >
-          <FontAwesome6 name="house" size={16} color="#fff" />
-          <Text style={styles.primaryButtonText}>กลับหน้าหลัก</Text>
+          <FontAwesome6 name="clipboard-question" size={16} color="#fff" />
+          <Text style={styles.primaryButtonText}>แบบสอบถามอาการหลังยืด</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity 
-          style={styles.secondaryButton} 
+        {/* ยืดอีกครั้ง */}
+        <TouchableOpacity
+          style={styles.secondaryButton}
           onPress={() => router.replace('/stretch')}
         >
           <FontAwesome6 name="person-running" size={16} color="#43a5ff" />
           <Text style={styles.secondaryButtonText}>ยืดอีกครั้ง</Text>
         </TouchableOpacity>
       </View>
-
     </ScrollView>
   );
 }
 
-// ================= STYLES =================
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
@@ -284,9 +269,7 @@ const styles = StyleSheet.create({
     marginBottom: 22,
     gap: 12,
   },
-  streakMessageEmoji: {
-    fontSize: 30,
-  },
+  streakMessageEmoji: { fontSize: 30 },
   streakMessageTitle: {
     color: '#d85b32',
     fontSize: 15,
@@ -297,9 +280,7 @@ const styles = StyleSheet.create({
     color: '#8b756c',
     fontSize: 12,
   },
-  completeActions: {
-    gap: 10,
-  },
+  completeActions: { gap: 10 },
   primaryButton: {
     backgroundColor: '#43a5ff',
     minHeight: 52,
